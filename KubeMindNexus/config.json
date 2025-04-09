@@ -1,0 +1,97 @@
+{
+  "clusters": {
+    "main-k8s-cluster": {
+      "name": "main-k8s-cluster",
+      "ip": "172.19.0.2",
+      "port": 32350,
+      "description": "Main production Kubernetes cluster",
+      "servers": {
+        "k8s-api-server": {
+          "type": "sse",
+          "name": "k8s-api-server",
+          "url": "http://172.19.0.2:32350/sse",
+          "command": null,
+          "args": [],
+          "env": {}
+        },
+        "metrics-server": {
+          "type": "sse",
+          "name": "metrics-server",
+          "url": "http://172.19.0.2:32351/sse",
+          "command": null,
+          "args": [],
+          "env": {}
+        }
+      }
+    },
+    "dev-cluster": {
+      "name": "dev-cluster",
+      "ip": "192.168.182.128",
+      "port": 8000,
+      "description": "Development Kubernetes cluster",
+      "servers": {
+        "lcu-server": {
+          "type": "sse",
+          "name": "lcu-server",
+          "url": "http://192.168.182.128:8000/sse",
+          "command": null,
+          "args": [],
+          "env": {}
+        }
+      }
+    }
+  },
+  "local_servers": {
+    "ollama-server": {
+      "type": "stdio",
+      "name": "ollama-server",
+      "command": "ollama",
+      "args": ["serve"],
+      "env": {},
+      "url": null
+    },
+    "kubectl-proxy": {
+      "type": "stdio",
+      "name": "kubectl-proxy",
+      "command": "kubectl",
+      "args": ["proxy", "--port=8001"],
+      "env": {
+        "KUBECONFIG": "~/.kube/config"
+      },
+      "url": null
+    }
+  },
+  "default_cluster": "main-k8s-cluster",
+  "api": {
+    "host": "127.0.0.1",
+    "port": 8000
+  },
+  "ui": {
+    "host": "127.0.0.1",
+    "port": 8501,
+    "title": "KubeMindNexus - Kubernetes Management"
+  },
+  "llm": {
+    "provider": "openai",
+    "openai_api_key": "fd69c68ffab3452da1e00bbf6bd4c915.axvFwrXXiDDnJXKx",
+    "openai_model": "GLM-4-Flash",
+    "deepseek_api_key": "",
+    "openrouter_api_key": "",
+    "ollama_base_url": "http://localhost:11434",
+    "other_params": {
+      "temperature": 0.7,
+      "max_tokens": 4096
+    }
+  },
+  "mcp": {
+    "max_retries": 5,
+    "retry_delay": 2.0
+  },
+  "logger": {
+    "level": "INFO",
+    "file": "~/.kubemindnexus/logs/kubemindnexus.log"
+  },
+  "react": {
+    "max_iterations": 10
+  }
+}
