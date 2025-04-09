@@ -264,6 +264,57 @@ config.save_config()
 config.reload()
 ```
 
+## Database
+
+KubeMindNexus uses SQLite for persistent storage. The database is automatically created and initialized when you first run the application, but you can also manually initialize it using the provided SQL file.
+
+### Database Initialization
+
+#### Automatic Initialization
+
+By default, the database is automatically initialized when the application starts:
+
+```python
+from kubemindnexus.database.client import DatabaseClient
+
+# Initialize the database with default settings
+db_client = DatabaseClient()
+```
+
+#### Manual Initialization
+
+You can manually initialize the database using the provided SQL file:
+
+```bash
+# Create an empty database file
+touch ~/.kubemindnexus/kubemindnexus.db
+
+# Initialize the database with the SQL file
+sqlite3 ~/.kubemindnexus/kubemindnexus.db < initialize_db.sql
+```
+
+#### Custom Database Path
+
+You can specify a custom database path:
+
+```python
+from kubemindnexus.database.client import DatabaseClient
+
+# Initialize the database with a custom path
+db_client = DatabaseClient(db_path="/path/to/your/database.db")
+```
+
+### Database Schema
+
+The database includes the following tables:
+
+- **clusters**: Kubernetes cluster configurations
+- **mcp_servers**: MCP server configurations
+- **chat_history**: History of LLM interactions
+- **health_checks**: Cluster health check results
+- **performance_metrics**: Cluster performance metrics
+- **config**: Application configuration key-value pairs
+
 ## Architecture
 
 KubeMindNexus is built with a modular architecture:
