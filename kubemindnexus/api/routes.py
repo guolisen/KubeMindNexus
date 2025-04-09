@@ -678,7 +678,7 @@ async def list_llm_providers(
         A list of available LLM providers.
     """
     providers = llm_factory.get_available_providers()
-    default_provider = config.config.default_llm_provider
+    default_provider = config.get_default_llm_provider()
     
     return [
         LLMProviderResponse(

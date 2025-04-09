@@ -119,6 +119,10 @@ class MCPConfigModel(BaseModel):
         description="Delay between MCP connection retries"
     )
 
+# MCP retry constants
+MAX_MCP_RETRIES = int(os.getenv("KUBEMINDNEXUS_MAX_MCP_RETRIES", "3"))
+MCP_RETRY_DELAY = float(os.getenv("KUBEMINDNEXUS_MCP_RETRY_DELAY", "1.0"))
+
 
 class LoggerConfigModel(BaseModel):
     """Model for logger configuration."""
@@ -138,6 +142,9 @@ class ReActConfigModel(BaseModel):
         default=int(os.getenv("KUBEMINDNEXUS_REACT_MAX_ITERATIONS", "5")),
         description="Maximum ReAct iterations"
     )
+
+# ReAct constants
+REACT_MAX_ITERATIONS = int(os.getenv("KUBEMINDNEXUS_REACT_MAX_ITERATIONS", "5"))
 
 
 class ConfigModel(BaseModel):
