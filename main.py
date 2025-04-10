@@ -171,6 +171,7 @@ async def run_server(
     api_host: Optional[str] = None,
     api_port: Optional[int] = None,
     ui_port: Optional[int] = None,
+    mode: str = "both",
 ) -> None:
     """Run the KubeMindNexus server.
     
@@ -179,6 +180,7 @@ async def run_server(
         api_host: API server host.
         api_port: API server port.
         ui_port: UI server port.
+        mode: Server mode - api, ui, or both.
     """
     try:
         # Initialize configuration
@@ -213,15 +215,21 @@ async def run_server(
         # Connect to default MCP servers
         await startup_mcp_servers(config, mcp_hub)
         
-        # Start UI server in a new process
-        ui_process = multiprocessing.Process(
-            target=run_ui_server,
-            args=(config, db_manager, mcp_hub, react_loop, ui_port),
-        )
-        ui_process.start()
+        ui_process = None
         
-        # Start API server
-        await run_api_server(config, api_host, api_port)
+        # Start UI server if mode is 'ui' or 'both'
+        if mode in ["ui", "both"]:
+            logger.info(f"Starting UI server (mode: {mode})...")
+            ui_process = multiprocessing.Process(
+                target=run_ui_server,
+                args=(config, db_manager, mcp_hub, react_loop, ui_port),
+            )
+            ui_process.start()
+        
+        # Start API server if mode is 'api' or 'both'
+        if mode in ["api", "both"]:
+            logger.info(f"Starting API server (mode: {mode})...")
+            await run_api_server(config, api_host, api_port)
         
     except KeyboardInterrupt:
         logger.info("Server shutdown requested...")
@@ -284,6 +292,15 @@ def parse_args() -> argparse.Namespace:
         help="Enable debug logging",
     )
     
+    # Add server mode selection argument
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["api", "ui", "both"],
+        default="both",
+        help="Select which servers to run: API server, UI server, or both (default: both)",
+    )
+    
     return parser.parse_args()
 
 
@@ -306,6 +323,7 @@ def main() -> None:
             api_host=args.api_host,
             api_port=args.api_port,
             ui_port=args.ui_port,
+            mode=args.mode,
         )
     )
 
