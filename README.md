@@ -84,9 +84,79 @@ Example configuration:
   "ui_port": 8501,
   "api_host": "127.0.0.1",
   "api_port": 8000,
-  "default_mcp_servers": []
+  "default_mcp_servers": [],
+  "llm": {
+    "default_provider": "openai",
+    "providers": {
+      "openai": {
+        "model": "gpt-4o",
+        "api_key": "",
+        "base_url": "https://api.openai.com/v1",
+        "parameters": {
+          "temperature": 0.7,
+          "max_tokens": 1000
+        }
+      },
+      "ollama": {
+        "model": "llama3",
+        "base_url": "http://localhost:11434",
+        "parameters": {
+          "temperature": 0.7,
+          "num_predict": 1000
+        }
+      },
+      "deepseek": {
+        "model": "deepseek-chat",
+        "api_key": "",
+        "base_url": "https://api.deepseek.com/v1",
+        "parameters": {
+          "temperature": 0.7,
+          "max_tokens": 1000
+        }
+      },
+      "openrouter": {
+        "model": "anthropic/claude-3-opus",
+        "api_key": "",
+        "base_url": "https://openrouter.ai/api/v1",
+        "parameters": {
+          "temperature": 0.7,
+          "max_tokens": 1000
+        }
+      }
+    }
+  }
 }
 ```
+
+### LLM Configuration
+
+The `llm` section of the configuration allows you to configure multiple LLM providers:
+
+- `default_provider`: The default LLM provider to use
+- `providers`: Configuration for each supported LLM provider
+
+For each provider, you can configure:
+- `model`: The model name to use
+- `api_key`: Your API key (can also be provided via environment variables)
+- `base_url`: API endpoint URL (useful for self-hosted or proxied services)
+- `parameters`: Provider-specific parameters like temperature and token limits
+
+#### Setting API Keys
+
+You can set API keys in three ways:
+
+1. **Environment Variables**: Set environment variables like `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, or `OPENROUTER_API_KEY`
+
+2. **Configuration File**: Add your API keys directly to the config.json file
+
+3. **Helper Script**: Use the provided helper script:
+   ```bash
+   ./set_llm_api_key.py openai "your-api-key-here"
+   ```
+
+   Available providers: `openai`, `deepseek`, `openrouter`, `ollama`
+   
+   Note: For Ollama, which runs locally, you typically don't need an API key.
 
 ## Usage
 

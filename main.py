@@ -129,7 +129,7 @@ def run_ui_server(
                 "server.port": port,
                 "server.headless": True,
                 "browser.serverAddress": "localhost",
-                "global.developmentMode": False,
+                "global.developmentMode": False
             },
         )
         
@@ -204,8 +204,43 @@ async def run_server(
         llm_factory = LLMFactory(config, db_manager)
         logger.info("LLM factory initialized.")
         
-        # Initialize ReactLoop
-        react_loop = ReactLoop(config, mcp_hub, llm_factory, db_manager)
+        # Initialize default LLM for ReactLoop
+        # Try to get LLM config from database first
+        default_llm_config = db_manager.get_default_llm_config()
+        
+        # If no LLM config in database, use the one from config file
+        if not default_llm_config:
+            logger.info("No LLM configuration found in database. Using configuration from config file.")
+            llm_config = config.config.llm
+            provider = llm_config.get("default_provider", "openai")
+            provider_config = llm_config.get("providers", {}).get(provider, {})
+            
+            # Get API key from config or environment variable
+            api_key = provider_config.get("api_key")
+            if not api_key and provider in ["openai", "deepseek", "openrouter"]:
+                env_var_name = f"{provider.upper()}_API_KEY"
+                api_key = os.environ.get(env_var_name)
+                if api_key:
+                    logger.info(f"Using API key from environment variable {env_var_name}")
+            
+            default_llm = llm_factory.create_llm(
+                provider=provider,
+                model=provider_config.get("model", "gpt-4o"),
+                api_key=api_key,
+                base_url=provider_config.get("base_url"),
+                parameters=provider_config.get("parameters", {})
+            )
+        else:
+            default_llm = llm_factory.create_llm(
+                provider=default_llm_config["provider"],
+                model=default_llm_config["model"],
+                api_key=default_llm_config.get("api_key"),
+                base_url=default_llm_config.get("base_url"),
+                parameters=default_llm_config.get("parameters", {})
+            )
+        
+        # Initialize ReactLoop with correct parameter order
+        react_loop = ReactLoop(config, db_manager, mcp_hub, default_llm)
         logger.info("ReactLoop initialized.")
         
         # Set up API app
@@ -262,6 +297,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=str,
+        #default="/home/lewis/mcp/KubeMindNexus/kubemindnexus/config/default_config.json"
         help="Path to configuration file",
     )
     

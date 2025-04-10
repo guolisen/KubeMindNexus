@@ -26,6 +26,7 @@ class Config:
         api_host: str = DEFAULT_API_HOST,
         api_port: int = DEFAULT_API_PORT,
         default_mcp_servers: Optional[List[str]] = None,
+        llm: Optional[Dict[str, Any]] = None,
     ):
         """Initialize configuration.
         
@@ -38,6 +39,7 @@ class Config:
             api_host: API server host.
             api_port: API server port.
             default_mcp_servers: Default MCP servers to connect on startup.
+            llm: LLM configuration with providers and settings.
         """
         self.db_path = db_path
         self.system_prompt_template = system_prompt_template
@@ -47,6 +49,22 @@ class Config:
         self.api_host = api_host
         self.api_port = api_port
         self.default_mcp_servers = default_mcp_servers or []
+        self.llm = llm or {
+            "default_provider": "openai",
+            "providers": {
+                "openai": {
+                    "model": "gpt-4o",
+                    "api_key": "",
+                    "base_url": "https://api.openai.com/v1",
+                    "parameters": {"temperature": 0.7, "max_tokens": 1000}
+                },
+                "ollama": {
+                    "model": "llama3",
+                    "base_url": "http://localhost:11434",
+                    "parameters": {"temperature": 0.7, "num_predict": 1000}
+                }
+            }
+        }
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary.
@@ -63,6 +81,7 @@ class Config:
             "api_host": self.api_host,
             "api_port": self.api_port,
             "default_mcp_servers": self.default_mcp_servers,
+            "llm": self.llm,
         }
     
     @classmethod
@@ -84,6 +103,7 @@ class Config:
             api_host=data.get("api_host", DEFAULT_API_HOST),
             api_port=data.get("api_port", DEFAULT_API_PORT),
             default_mcp_servers=data.get("default_mcp_servers", []),
+            llm=data.get("llm"),
         )
 
 

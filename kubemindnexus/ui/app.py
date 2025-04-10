@@ -297,26 +297,19 @@ class StreamlitApp:
                 for msg in reversed(chat_history)  # Reverse to get oldest messages first
             ]
             
-            # Process message through ReAct loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # Use asyncio.run instead of manually creating an event loop
+            response, chat_id = asyncio.run(
+                self.react_loop.run(
+                    user_message=message,
+                    conversation_history=conversation_history,
+                    current_cluster=st.session_state.current_cluster,
+                )
+            )
             
-            try:
-                response, chat_id = loop.run_until_complete(
-                    self.react_loop.run(
-                        user_message=message,
-                        conversation_history=conversation_history,
-                        current_cluster=st.session_state.current_cluster,
-                    )
-                )
-                
-                # Add assistant response to chat history
-                st.session_state.chat_history.append(
-                    {"role": "assistant", "content": response}
-                )
-                
-            finally:
-                loop.close()
+            # Add assistant response to chat history
+            st.session_state.chat_history.append(
+                {"role": "assistant", "content": response}
+            )
                 
         except Exception as e:
             # Add error message to chat history
@@ -769,15 +762,9 @@ class StreamlitApp:
             True if connection was successful, False otherwise.
         """
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                success = loop.run_until_complete(self.mcp_hub.manager.connect_server(server_name))
-                return success
-            finally:
-                loop.close()
-                
+            # Use asyncio.run instead of manually creating an event loop
+            success = asyncio.run(self.mcp_hub.manager.connect_server(server_name))
+            return success
         except Exception as e:
             logger.error(f"Error connecting to server {server_name}: {str(e)}")
             return False
@@ -792,15 +779,9 @@ class StreamlitApp:
             True if disconnection was successful, False otherwise.
         """
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                success = loop.run_until_complete(self.mcp_hub.manager.disconnect_server(server_name))
-                return success
-            finally:
-                loop.close()
-                
+            # Use asyncio.run instead of manually creating an event loop
+            success = asyncio.run(self.mcp_hub.manager.disconnect_server(server_name))
+            return success
         except Exception as e:
             logger.error(f"Error disconnecting from server {server_name}: {str(e)}")
             return False
@@ -878,15 +859,9 @@ class StreamlitApp:
             if self.mcp_hub.manager.is_server_connected(server["name"]):
                 self._disconnect_from_server(server["name"])
                 
-            # Delete server
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                success = loop.run_until_complete(self.mcp_hub.manager.remove_server(server_id))
-                return success
-            finally:
-                loop.close()
+            # Use asyncio.run instead of manually creating an event loop
+            success = asyncio.run(self.mcp_hub.manager.remove_server(server_id))
+            return success
                 
         except Exception as e:
             logger.error(f"Error deleting server: {str(e)}")

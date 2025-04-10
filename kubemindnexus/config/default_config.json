@@ -6,5 +6,45 @@
   "ui_port": 8501,
   "api_host": "192.168.182.128",
   "api_port": 8000,
-  "default_mcp_servers": []
+  "default_mcp_servers": [],
+  "llm": {
+    "default_provider": "openai",
+    "providers": {
+      "openai": {
+        "model": "GLM-4-Plus",
+        "api_key": "fd69c68ffab3452da1e00bbf6bd4c915.axvFwrXXiDDnJXKx",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "parameters": {
+          "temperature": 0.7,
+          "max_tokens": 1000
+        }
+      },
+      "ollama": {
+        "model": "llama3",
+        "base_url": "http://localhost:11434",
+        "parameters": {
+          "temperature": 0.7,
+          "num_predict": 1000
+        }
+      },
+      "deepseek": {
+        "model": "deepseek-chat",
+        "api_key": "",
+        "base_url": "https://api.deepseek.com/v1",
+        "parameters": {
+          "temperature": 0.7,
+          "max_tokens": 1000
+        }
+      },
+      "openrouter": {
+        "model": "anthropic/claude-3-opus",
+        "api_key": "",
+        "base_url": "https://openrouter.ai/api/v1",
+        "parameters": {
+          "temperature": 0.7,
+          "max_tokens": 1000
+        }
+      }
+    }
+  }
 }
