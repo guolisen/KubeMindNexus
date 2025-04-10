@@ -97,8 +97,18 @@ class BaseLLM(abc.ABC):
 class LLMFactory:
     """Factory for creating LLM instances."""
     
-    @staticmethod
+    def __init__(self, config=None, db_manager=None):
+        """Initialize LLM factory.
+        
+        Args:
+            config: Configuration instance.
+            db_manager: Database manager instance.
+        """
+        self.config = config
+        self.db_manager = db_manager
+    
     def create_llm(
+        self,
         provider: Union[str, LLMProvider],
         model: str,
         api_key: Optional[str] = None,

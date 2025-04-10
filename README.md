@@ -92,6 +92,10 @@ Example configuration:
 
 ### Starting the Application
 
+There are two ways to run KubeMindNexus:
+
+#### Option 1: Using the package with -m flag (Recommended)
+
 ```bash
 python -m kubemindnexus
 ```
@@ -101,6 +105,22 @@ Or with custom options:
 ```bash
 python -m kubemindnexus --api-port 8080 --ui-port 8502 --debug
 ```
+
+This method works because of the `__main__.py` file within the kubemindnexus package.
+
+#### Option 2: Using main.py directly
+
+```bash
+python main.py
+```
+
+Or with custom options:
+
+```bash
+python main.py --api-port 8080 --ui-port 8502 --debug
+```
+
+Both methods are functionally equivalent and pass command-line arguments to the same entry point.
 
 ### Web UI
 

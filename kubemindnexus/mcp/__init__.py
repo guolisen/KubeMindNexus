@@ -2,6 +2,6 @@
 
 from kubemindnexus.mcp.hub import MCPHub
 from kubemindnexus.mcp.manager import MCPManager
-from kubemindnexus.mcp.server import MCPServer, MCPServerClient
+from kubemindnexus.mcp.server import MCPServer, StdioMCPServer, SSEMCPServer
 
-__all__ = ["MCPHub", "MCPManager", "MCPServer", "MCPServerClient"]
+__all__ = ["MCPHub", "MCPManager", "MCPServer", "StdioMCPServer", "SSEMCPServer"]

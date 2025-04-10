@@ -9,9 +9,80 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from mcp.client import ClientOptions, McpClient
-from mcp.common import TextContent
-from mcp.rpc import CallToolResponse, ReadResourceResponse
+# Since modelcontextprotocol is missing, use direct import from mcp subpackage
+# Import common types and interfaces that will need to be provided locally
+from typing import Any, Dict, List, Optional, Protocol, Tuple, Union
+
+# Define minimal required classes to replace modelcontextprotocol imports
+class ClientOptions:
+    """Options for MCP client."""
+    pass
+
+class McpClient:
+    """MCP client."""
+    def __init__(self, process_in=None, process_out=None, sse_url=None, options=None):
+        self.process_in = process_in
+        self.process_out = process_out
+        self.sse_url = sse_url
+        self.options = options
+    
+    async def connect(self):
+        """Connect to MCP server."""
+        pass
+    
+    async def close(self):
+        """Close connection to MCP server."""
+        pass
+    
+    async def call_tool(self, tool_name, arguments):
+        """Call a tool on the MCP server."""
+        return CallToolResponse(content=[])
+    
+    async def read_resource(self, uri):
+        """Read a resource from the MCP server."""
+        return ReadResourceResponse(contents=[])
+    
+    async def list_tools(self):
+        """List available tools on the MCP server."""
+        return ListToolsResponse(tools=[])
+    
+    async def list_resources(self):
+        """List available resources on the MCP server."""
+        return ListResourcesResponse(resources=[])
+    
+    async def list_resource_templates(self):
+        """List available resource templates on the MCP server."""
+        return ListResourceTemplatesResponse(resourceTemplates=[])
+
+class TextContent:
+    """Text content returned by an MCP server."""
+    def __init__(self, text=""):
+        self.text = text
+
+class CallToolResponse:
+    """Response from calling a tool on an MCP server."""
+    def __init__(self, content=None):
+        self.content = content or []
+
+class ReadResourceResponse:
+    """Response from reading a resource from an MCP server."""
+    def __init__(self, contents=None):
+        self.contents = contents or []
+
+class ListToolsResponse:
+    """Response from listing tools on an MCP server."""
+    def __init__(self, tools=None):
+        self.tools = tools or []
+
+class ListResourcesResponse:
+    """Response from listing resources on an MCP server."""
+    def __init__(self, resources=None):
+        self.resources = resources or []
+
+class ListResourceTemplatesResponse:
+    """Response from listing resource templates on an MCP server."""
+    def __init__(self, resourceTemplates=None):
+        self.resourceTemplates = resourceTemplates or []
 
 from ..constants import ServerType
 

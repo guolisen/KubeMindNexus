@@ -134,7 +134,7 @@ def run_ui_server(
         logger.error(f"Error running UI server: {str(e)}")
 
 
-def run_api_server(
+async def run_api_server(
     config: Configuration,
     host: str,
     port: int,
@@ -149,13 +149,15 @@ def run_api_server(
     try:
         logger.info(f"Starting API server on {host}:{port}...")
         
-        # Run API server
-        uvicorn.run(
+        # Use uvicorn.Server for async handling
+        config = uvicorn.Config(
             "kubemindnexus.api.routes:app",
             host=host,
             port=port,
             log_level="info",
         )
+        server = uvicorn.Server(config)
+        await server.serve()
         
     except Exception as e:
         logger.error(f"Error running API server: {str(e)}")
@@ -216,7 +218,7 @@ async def run_server(
         ui_process.start()
         
         # Start API server
-        run_api_server(config, api_host, api_port)
+        await run_api_server(config, api_host, api_port)
         
     except KeyboardInterrupt:
         logger.info("Server shutdown requested...")
