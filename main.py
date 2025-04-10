@@ -206,7 +206,7 @@ async def run_server(
         
         # Initialize default LLM for ReactLoop
         # Try to get LLM config from database first
-        default_llm_config = db_manager.get_default_llm_config()
+        default_llm_config = None #db_manager.get_default_llm_config()
         
         # If no LLM config in database, use the one from config file
         if not default_llm_config:

@@ -27,6 +27,7 @@ class Config:
         api_host: str = DEFAULT_API_HOST,
         api_port: int = DEFAULT_API_PORT,
         default_mcp_servers: Optional[List[str]] = None,
+        llm: Optional[Dict[str, Any]] = None,
     ):
         """Initialize configuration.
         
@@ -48,6 +49,7 @@ class Config:
         self.api_host = api_host
         self.api_port = api_port
         self.default_mcp_servers = default_mcp_servers or []
+        self.llm = llm or {}
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary.
@@ -64,6 +66,7 @@ class Config:
             "api_host": self.api_host,
             "api_port": self.api_port,
             "default_mcp_servers": self.default_mcp_servers,
+            "llm": self.llm,
         }
     
     @classmethod
@@ -84,7 +87,9 @@ class Config:
             ui_port=data.get("ui_port", DEFAULT_UI_PORT),
             api_host=data.get("api_host", DEFAULT_API_HOST),
             api_port=data.get("api_port", DEFAULT_API_PORT),
+            llm=data.get("llm", {}),
             default_mcp_servers=data.get("default_mcp_servers", []),
+
         )
 
 

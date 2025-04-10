@@ -103,7 +103,7 @@ class Config:
             api_host=data.get("api_host", DEFAULT_API_HOST),
             api_port=data.get("api_port", DEFAULT_API_PORT),
             default_mcp_servers=data.get("default_mcp_servers", []),
-            llm=data.get("llm"),
+            llm=data.get("llm", {}),  # Ensure we always have at least an empty dict
         )
 
 
