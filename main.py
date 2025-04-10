@@ -34,6 +34,9 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 
+# Suppress watchdog debug logs
+logging.getLogger('watchdog').setLevel(logging.WARNING)
+
 logger = logging.getLogger("kubemindnexus")
 
 

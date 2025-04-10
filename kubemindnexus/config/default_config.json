@@ -4,7 +4,7 @@
   "react_max_iterations": 5,
   "react_safety_timeout": 60,
   "ui_port": 8501,
-  "api_host": "127.0.0.1",
+  "api_host": "192.168.182.128",
   "api_port": 8000,
   "default_mcp_servers": []
 }
