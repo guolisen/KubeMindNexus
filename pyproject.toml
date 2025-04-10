@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kubemindnexus"
+version = "0.1.0"
+description = "Kubernetes clusters management with Model Context Protocol"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+    { name = "KubeMindNexus Team" },
+]
+keywords = ["kubernetes", "k8s", "mcp", "model context protocol", "llm", "cluster management"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.22.0",
+    "streamlit>=1.25.0",
+    "pandas>=2.0.0",
+    "plotly>=5.15.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "aiohttp>=3.8.5",
+    "websockets>=11.0.3",
+    "openai>=1.0.0",
+    "modelcontextprotocol>=0.1.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/username/kubemindnexus"
+"Bug Tracker" = "https://github.com/username/kubemindnexus/issues"
+
+[project.scripts]
+kubemindnexus = "kubemindnexus.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["kubemindnexus"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.black]
+line-length = 88
+target-version = ["py39", "py310", "py311"]
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "streamlit.*",
+    "uvicorn.*",
+    "pandas.*",
+    "plotly.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest]
+testpaths = ["tests"]
