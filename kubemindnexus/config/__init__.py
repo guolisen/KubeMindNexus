@@ -141,13 +141,13 @@ class Configuration:
                 return Config.from_dict(data)
             else:
                 # Create default configuration
-                default_config = Config()
+                default_config = get_default_config()
                 
                 # Save default configuration
                 self.save_config(default_config)
                 
                 logger.info(f"Created default configuration at {self.config_path}")
-                return default_config
+                return Config.from_dict(default_config)
                 
         except Exception as e:
             logger.error(f"Error loading configuration: {str(e)}")
