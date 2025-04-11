@@ -233,7 +233,7 @@ async def run_server(
         # Connect to default MCP servers
         await startup_mcp_servers(config, mcp_hub)
         
-        # Start API server if mode is 'api' or 'both'
+        # Start API server
         logger.info(f"Starting API server...")
         await run_api_server(config, api_host, api_port)
         
@@ -299,9 +299,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["api", "ui", "both"],
-        default="both",
-        help="Select which servers to run: API server, UI server, or both (default: both)",
+        choices=["api", "ui"],
+        default="api",
+        help="Select which servers to run: API server or UI server (default: api)",
     )
     
     return parser.parse_args()
@@ -330,24 +330,20 @@ def main() -> None:
     
     ui_process = None
 
-    # Start UI server if mode is 'ui' or 'both'
-    if args.mode in ["ui", "both"]:
+    # Start UI server if mode is 'ui'
+    if args.mode == "ui":
         logger.info(f"Starting UI server (mode: {args.mode})...")
         ui_process = multiprocessing.Process(
             target=run_ui_server,
             args=(config, ui_port),
         )
         ui_process.start()
-        if args.mode == "ui":
-            # Wait for UI server to finish if only UI mode is selected
-            ui_process.join()
-            return
-        else:
-            # If both servers are running, wait for UI server to finish in the background
-            logger.info("UI server running in background...")
+        # Wait for UI server to finish if UI mode is selected
+        ui_process.join()
+        return
 
     # Run server
-    if args.mode in ["api", "both"]:
+    if args.mode == "api":
         logger.info(f"Starting API server (mode: {args.mode})...")
         # Run API server in the main thread
         # Use asyncio.run to run the async function
