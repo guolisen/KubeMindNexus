@@ -189,7 +189,7 @@ async def run_server(
         ui_port = ui_port or config.config.ui_port
         
         ui_process = None
-        
+        '''
         # Start UI server if mode is 'ui' or 'both'
         if mode in ["ui", "both"]:
             logger.info(f"Starting UI server (mode: {mode})...")
@@ -198,7 +198,7 @@ async def run_server(
                 args=(config, ui_port),
             )
             ui_process.start()
-        
+        '''
         # Initialize database
         db_manager = DatabaseManager(config)
         logger.info("Database initialized.")
@@ -247,11 +247,11 @@ async def run_server(
             )
         
         # Initialize ReactLoop with correct parameter order
-        #react_loop = ReactLoop(config, db_manager, mcp_hub, default_llm)
+        react_loop = ReactLoop(config, db_manager, mcp_hub, default_llm)
         #logger.info("ReactLoop initialized.")
         
         # Set up API app
-        setup_api_app(config, db_manager, mcp_hub, None)
+        setup_api_app(config, db_manager, mcp_hub, react_loop)
         logger.info("API app set up.")
         
         # Connect to default MCP servers
