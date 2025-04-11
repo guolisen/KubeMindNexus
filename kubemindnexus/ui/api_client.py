@@ -19,11 +19,24 @@ class ApiClient:
             base_url: Base URL for API.
         """
         self.base_url = base_url
-        self.client = httpx.AsyncClient(base_url=base_url, timeout=30.0)
+        self._client = None
+    
+    @property
+    def client(self) -> httpx.AsyncClient:
+        """Get the HTTP client, creating it if needed.
+        
+        Returns:
+            The HTTP client.
+        """
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
+        return self._client
     
     async def close(self):
         """Close the HTTP client."""
-        await self.client.aclose()
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
     
     # Cluster endpoints
     

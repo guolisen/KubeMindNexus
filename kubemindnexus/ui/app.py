@@ -23,8 +23,10 @@ logger = logging.getLogger(__name__)
 class AsyncToSync:
     """Helper class to run async functions in a synchronous context."""
     
-    @staticmethod
-    def run(coro):
+    _loop = None
+    
+    @classmethod
+    def run(cls, coro):
         """Run an async coroutine synchronously.
         
         Args:
@@ -33,7 +35,17 @@ class AsyncToSync:
         Returns:
             Result of the coroutine.
         """
-        return asyncio.run(coro)
+        if cls._loop is None or cls._loop.is_closed():
+            cls._loop = asyncio.new_event_loop()
+            
+        try:
+            return cls._loop.run_until_complete(coro)
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                # Create a new loop if the previous one was closed
+                cls._loop = asyncio.new_event_loop()
+                return cls._loop.run_until_complete(coro)
+            raise
 
 
 class StreamlitApp:
