@@ -279,8 +279,14 @@ class StreamlitApp:
                     st.session_state.thinking = False
                     st.info("Stopping the current operation...")
         
-        # Process message when submitted
+            # Process message when submitted
         if submit and user_message and not st.session_state.thinking:
+            # Save message for processing
+            if "pending_message" not in st.session_state:
+                st.session_state.pending_message = user_message
+            else:
+                st.session_state.pending_message = user_message
+            
             # Add user message to chat history
             st.session_state.chat_history.append(
                 {"role": "user", "content": user_message}
@@ -288,15 +294,68 @@ class StreamlitApp:
             
             # Start thinking
             st.session_state.thinking = True
-            st.rerun()
             
-            # Process message in background thread
-            thread = threading.Thread(
-                target=self._process_chat_message,
-                args=(user_message,),
-            )
-            add_script_run_ctx(thread)
-            thread.start()
+            # Signal that we need to process the message
+            st.session_state.process_message = True
+            
+            # Rerun to update UI first
+            st.rerun()
+        
+        # Process message if needed (this runs after rerun)
+        if st.session_state.get("process_message", False) and st.session_state.get("pending_message"):
+            try:
+                # Get the message
+                msg = st.session_state.pending_message
+                
+                # Clear the pending message
+                st.session_state.pending_message = None
+                st.session_state.process_message = False
+                
+                # Get current cluster ID if any
+                cluster_id = None
+                if st.session_state.current_cluster:
+                    cluster = AsyncToSync.run(
+                        self.api_client.get_cluster_by_name(st.session_state.current_cluster)
+                    )
+                    if cluster:
+                        cluster_id = cluster["id"]
+                
+                # Log the API call
+                logger.info(f"Sending chat message to API: '{msg[:30]}...' with cluster_id={cluster_id}")
+                
+                # Send message to API
+                response = AsyncToSync.run(
+                    self.api_client.send_chat_message(
+                        message=msg,
+                        cluster_id=cluster_id,
+                    )
+                )
+                
+                if response:
+                    # Add assistant response to chat history
+                    st.session_state.chat_history.append(
+                        {"role": "assistant", "content": response["message"]}
+                    )
+                    logger.info(f"Received chat response from API: '{response['message'][:30]}...'")
+                else:
+                    # Add error message to chat history
+                    st.session_state.chat_history.append(
+                        {"role": "assistant", "content": "Failed to process your message. Please try again."}
+                    )
+                    logger.error("Received empty response from chat API")
+                    
+            except Exception as e:
+                # Add error message to chat history
+                error_message = f"Error processing your message: {str(e)}"
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": error_message}
+                )
+                logger.error(f"Error in chat processing: {str(e)}")
+                
+            finally:
+                # Stop thinking indicator
+                st.session_state.thinking = False
+                st.rerun()
     
     def _process_chat_message(self, message: str):
         """Process chat message in background thread.

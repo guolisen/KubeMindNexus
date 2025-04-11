@@ -97,8 +97,8 @@ class OpenAILLM(BaseLLM):
                 **self.parameters,
             }
             
-            # Send request
-            response = await self.client.chat.completions.create(**params)
+            # Send request - remove await as the client doesn't return a coroutine
+            response = self.client.chat.completions.create(**params)
             
             if not response.choices:
                 return "", []
@@ -213,8 +213,8 @@ class OpenAILLM(BaseLLM):
                 **self.parameters,
             }
             
-            # Send request
-            response = await self.client.chat.completions.create(**params)
+            # Send request - remove await as the client doesn't return a coroutine
+            response = self.client.chat.completions.create(**params)
             
             if not response.choices:
                 return "", []
