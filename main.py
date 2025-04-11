@@ -300,21 +300,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--api-host",
         type=str,
-        default=DEFAULT_API_HOST,
+        #default=DEFAULT_API_HOST,
         help=f"API server host (default: {DEFAULT_API_HOST})",
     )
     
     parser.add_argument(
         "--api-port",
         type=int,
-        default=DEFAULT_API_PORT,
+        #default=DEFAULT_API_PORT,
         help=f"API server port (default: {DEFAULT_API_PORT})",
     )
     
     parser.add_argument(
         "--ui-port",
         type=int,
-        default=DEFAULT_UI_PORT,
+        #default=DEFAULT_UI_PORT,
         help=f"UI server port (default: {DEFAULT_UI_PORT})",
     )
     
