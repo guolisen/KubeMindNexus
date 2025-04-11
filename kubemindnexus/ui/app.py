@@ -15,14 +15,25 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
-from ..config import Configuration
-from ..constants import LLMProvider
-from ..database import DatabaseManager
-from ..llm.base import BaseLLM, LLMFactory
-from ..llm.react import ReactLoop
-from ..mcp.hub import MCPHub
+from .api_client import ApiClient
 
 logger = logging.getLogger(__name__)
+
+
+class AsyncToSync:
+    """Helper class to run async functions in a synchronous context."""
+    
+    @staticmethod
+    def run(coro):
+        """Run an async coroutine synchronously.
+        
+        Args:
+            coro: Coroutine to run.
+            
+        Returns:
+            Result of the coroutine.
+        """
+        return asyncio.run(coro)
 
 
 class StreamlitApp:
@@ -30,23 +41,15 @@ class StreamlitApp:
     
     def __init__(
         self,
-        config: Configuration,
-        db_manager: DatabaseManager,
-        mcp_hub: MCPHub,
-        react_loop: ReactLoop,
+        api_url: str = "http://localhost:8000",
     ):
         """Initialize Streamlit application.
         
         Args:
-            config: Configuration instance.
-            db_manager: Database manager instance.
-            mcp_hub: MCP hub instance.
-            react_loop: ReactLoop instance.
+            api_url: URL of the API server.
         """
-        self.config = config
-        self.db_manager = db_manager
-        self.mcp_hub = mcp_hub
-        self.react_loop = react_loop
+        # Initialize API client
+        self.api_client = ApiClient(base_url=api_url)
         
         # Custom CSS for UI
         self._apply_custom_styles()
@@ -121,6 +124,9 @@ class StreamlitApp:
             
         if "current_cluster" not in st.session_state:
             st.session_state.current_cluster = None
+            
+        if "running" not in st.session_state:
+            st.session_state.running = True
     
     def run(self):
         """Run the Streamlit application."""
@@ -137,6 +143,10 @@ class StreamlitApp:
             self._render_clusters_page()
         elif st.session_state.current_page == "MCP Servers":
             self._render_mcp_servers_page()
+        
+        # Close API client when app is closed
+        if not st.session_state.running:
+            AsyncToSync.run(self.api_client.close())
     
     def _render_sidebar(self):
         """Render the application sidebar."""
@@ -160,8 +170,8 @@ class StreamlitApp:
             st.divider()
             st.subheader("Current Cluster")
             
-            # Get clusters from database
-            clusters = self.db_manager.get_all_clusters()
+            # Get clusters from API
+            clusters = AsyncToSync.run(self.api_client.get_clusters())
             cluster_names = ["None"] + [c["name"] for c in clusters]
             
             current_cluster = st.selectbox(
@@ -180,8 +190,8 @@ class StreamlitApp:
             st.divider()
             st.subheader("LLM Provider")
             
-            # Get LLM configs from database
-            llm_configs = self.db_manager.get_all_llm_configs()
+            # Get LLM configs from API
+            llm_configs = AsyncToSync.run(self.api_client.get_llm_configs())
             
             if llm_configs:
                 # Create options in "provider/model" format
@@ -286,30 +296,30 @@ class StreamlitApp:
             # Get current cluster ID if any
             cluster_id = None
             if st.session_state.current_cluster:
-                cluster = self.db_manager.get_cluster_by_name(st.session_state.current_cluster)
+                cluster = AsyncToSync.run(
+                    self.api_client.get_cluster_by_name(st.session_state.current_cluster)
+                )
                 if cluster:
                     cluster_id = cluster["id"]
             
-            # Get chat history for context
-            chat_history = self.db_manager.get_chat_history(limit=10, cluster_id=cluster_id)
-            conversation_history = [
-                (msg["user_message"], msg["assistant_message"])
-                for msg in reversed(chat_history)  # Reverse to get oldest messages first
-            ]
-            
-            # Use asyncio.run instead of manually creating an event loop
-            response, chat_id = asyncio.run(
-                self.react_loop.run(
-                    user_message=message,
-                    conversation_history=conversation_history,
-                    current_cluster=st.session_state.current_cluster,
+            # Send message to API
+            response = AsyncToSync.run(
+                self.api_client.send_chat_message(
+                    message=message,
+                    cluster_id=cluster_id,
                 )
             )
             
-            # Add assistant response to chat history
-            st.session_state.chat_history.append(
-                {"role": "assistant", "content": response}
-            )
+            if response:
+                # Add assistant response to chat history
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": response["message"]}
+                )
+            else:
+                # Add error message to chat history
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": "Failed to process your message. Please try again."}
+                )
                 
         except Exception as e:
             # Add error message to chat history
@@ -328,8 +338,8 @@ class StreamlitApp:
         """Render the clusters management page."""
         st.header("Kubernetes Clusters")
         
-        # Get all clusters
-        clusters = self.db_manager.get_all_clusters()
+        # Get all clusters from API
+        clusters = AsyncToSync.run(self.api_client.get_clusters())
         
         # Tabs for different cluster views
         list_tab, add_tab, metrics_tab = st.tabs(["Clusters List", "Add Cluster", "Cluster Metrics"])
@@ -357,9 +367,9 @@ class StreamlitApp:
                 if cluster_id:
                     selected_id, selected_name = cluster_id
                     
-                    # Get cluster and its servers
-                    cluster = self.db_manager.get_cluster(selected_id)
-                    servers = self.db_manager.get_mcp_servers_by_cluster(selected_id)
+                    # Get cluster and its servers from API
+                    cluster = AsyncToSync.run(self.api_client.get_cluster(selected_id))
+                    servers = AsyncToSync.run(self.api_client.get_mcp_servers_by_cluster(selected_id))
                     
                     # Display cluster details
                     with st.expander("Cluster Details", expanded=True):
@@ -380,20 +390,41 @@ class StreamlitApp:
                         else:
                             for server in servers:
                                 st.markdown(f"**{server['name']}** ({server['type']})")
-                                st.markdown(f"Status: {'Connected' if self.mcp_hub.manager.is_server_connected(server['name']) else 'Disconnected'}")
+                                
+                                # Get server status from API
+                                server_status = AsyncToSync.run(
+                                    self.api_client.get_mcp_server_status(server['id'])
+                                )
+                                is_connected = server_status["is_connected"] if server_status else False
+                                status_text = "Connected" if is_connected else "Disconnected"
+                                status_color = "green" if is_connected else "red"
+                                
+                                st.markdown(f"Status: <span style='color:{status_color}'>{status_text}</span>", unsafe_allow_html=True)
                                 
                                 # Connect/disconnect buttons
                                 col1, col2 = st.columns(2)
                                 with col1:
-                                    if not self.mcp_hub.manager.is_server_connected(server['name']):
+                                    if not is_connected:
                                         if st.button(f"Connect to {server['name']}", key=f"connect_{server['id']}"):
-                                            self._connect_to_server(server['name'])
-                                            st.rerun()
+                                            success = AsyncToSync.run(
+                                                self.api_client.connect_mcp_server(server['id'])
+                                            )
+                                            if success:
+                                                st.success(f"Connected to server {server['name']}")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"Failed to connect to server {server['name']}")
                                 with col2:
-                                    if self.mcp_hub.manager.is_server_connected(server['name']):
+                                    if is_connected:
                                         if st.button(f"Disconnect from {server['name']}", key=f"disconnect_{server['id']}"):
-                                            self._disconnect_from_server(server['name'])
-                                            st.rerun()
+                                            success = AsyncToSync.run(
+                                                self.api_client.disconnect_mcp_server(server['id'])
+                                            )
+                                            if success:
+                                                st.success(f"Disconnected from server {server['name']}")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"Failed to disconnect from server {server['name']}")
                                             
                                 st.divider()
                     
@@ -409,9 +440,14 @@ class StreamlitApp:
                         
                         if st.button("Delete Cluster", key=f"delete_{selected_id}"):
                             if confirm == selected_name:
-                                self._delete_cluster(selected_id)
-                                st.success(f"Cluster '{selected_name}' deleted successfully.")
-                                st.rerun()
+                                success = AsyncToSync.run(
+                                    self.api_client.delete_cluster(selected_id)
+                                )
+                                if success:
+                                    st.success(f"Cluster '{selected_name}' deleted successfully.")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed to delete cluster '{selected_name}'.")
                             else:
                                 st.error("Cluster name does not match. Deletion aborted.")
         
@@ -426,9 +462,19 @@ class StreamlitApp:
                 
                 if st.form_submit_button("Register Cluster"):
                     if name and ip:
-                        self._add_cluster(name, ip, port, description)
-                        st.success(f"Cluster '{name}' registered successfully.")
-                        st.rerun()
+                        cluster_id = AsyncToSync.run(
+                            self.api_client.add_cluster(
+                                name=name,
+                                ip=ip,
+                                port=port,
+                                description=description,
+                            )
+                        )
+                        if cluster_id:
+                            st.success(f"Cluster '{name}' registered successfully.")
+                            st.rerun()
+                        else:
+                            st.error("Failed to register cluster.")
                     else:
                         st.error("Cluster name and IP address are required.")
         
@@ -447,87 +493,187 @@ class StreamlitApp:
                 if cluster_id:
                     selected_id, selected_name = cluster_id
                     
-                    # Example metrics tabs (these would be populated by actual data in a real implementation)
-                    perf_tab, health_tab, storage_tab = st.tabs(["Performance", "Health", "Storage"])
+                    # Metrics tabs
+                    perf_tab, health_tab, storage_tab, resources_tab = st.tabs(["Performance", "Health", "Storage", "Resources"])
                     
                     with perf_tab:
                         st.subheader(f"Performance Metrics for {selected_name}")
                         
-                        # Example CPU usage chart
-                        cpu_data = {
-                            "time": [f"T-{i}" for i in range(10, 0, -1)],
-                            "usage": [round(40 + 30 * (0.5 + 0.5 * (i % 3 - 1)), 2) for i in range(10)]
-                        }
-                        cpu_df = pd.DataFrame(cpu_data)
-                        
-                        st.line_chart(cpu_df.set_index("time"))
-                        
-                        # Example memory usage chart
-                        memory_data = {
-                            "time": [f"T-{i}" for i in range(10, 0, -1)],
-                            "usage_gb": [round(4 + 2 * (0.5 + 0.5 * (i % 5 - 2)), 2) for i in range(10)]
-                        }
-                        memory_df = pd.DataFrame(memory_data)
-                        
-                        st.line_chart(memory_df.set_index("time"))
+                        # Loading spinner
+                        with st.spinner("Loading performance metrics..."):
+                            # Get performance metrics from API
+                            metrics = AsyncToSync.run(
+                                self.api_client.get_cluster_performance_metrics(selected_id)
+                            )
+                            
+                            if metrics:
+                                # CPU usage chart
+                                cpu_data = pd.DataFrame(metrics["cpu_usage"])
+                                st.caption("CPU Usage Over Time")
+                                st.line_chart(cpu_data.set_index("time"))
+                                
+                                # Memory usage chart
+                                memory_data = pd.DataFrame(metrics["memory_usage"])
+                                st.caption("Memory Usage Over Time")
+                                st.line_chart(memory_data.set_index("time"))
+                            else:
+                                st.info("No performance metrics available for this cluster.")
                         
                     with health_tab:
                         st.subheader(f"Health Status for {selected_name}")
                         
-                        # Example health metrics
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.metric("Node Status", "Healthy", "↑")
+                        # Loading spinner
+                        with st.spinner("Loading health metrics..."):
+                            # Get health metrics from API
+                            metrics = AsyncToSync.run(
+                                self.api_client.get_cluster_health_metrics(selected_id)
+                            )
                             
-                        with col2:
-                            st.metric("Pod Health", "98%", "↑2%")
-                            
-                        with col3:
-                            st.metric("Services", "15/15", "")
-                            
-                        # Example pod status chart
-                        pod_status = {
-                            "Status": ["Running", "Pending", "Failed", "Succeeded", "Unknown"],
-                            "Count": [25, 2, 0, 5, 0]
-                        }
-                        pod_df = pd.DataFrame(pod_status)
-                        
-                        fig = px.pie(pod_df, values="Count", names="Status", title="Pod Status")
-                        st.plotly_chart(fig, use_container_width=True)
+                            if metrics:
+                                # Health metrics
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    st.metric("Node Status", metrics["node_status"])
+                                    
+                                with col2:
+                                    st.metric("Pod Health", f"{metrics['pod_health_percentage']}%")
+                                    
+                                with col3:
+                                    services_count = metrics["services_count"]
+                                    st.metric(
+                                        "Services", 
+                                        f"{services_count.get('Healthy', 0)}/{services_count.get('Total', 0)}"
+                                    )
+                                    
+                                # Pod status chart
+                                pod_status = metrics["pod_status"]
+                                pod_df = pd.DataFrame({
+                                    "Status": list(pod_status.keys()),
+                                    "Count": list(pod_status.values())
+                                })
+                                
+                                fig = px.pie(
+                                    pod_df, 
+                                    values="Count", 
+                                    names="Status", 
+                                    title="Pod Status"
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.info("No health metrics available for this cluster.")
                         
                     with storage_tab:
                         st.subheader(f"Storage Usage for {selected_name}")
                         
-                        # Example storage chart
-                        storage_data = {
-                            "PV Name": [f"pv-{i}" for i in range(1, 6)],
-                            "Capacity (GB)": [100, 50, 200, 75, 150],
-                            "Used (GB)": [78, 32, 150, 60, 25]
-                        }
-                        storage_df = pd.DataFrame(storage_data)
+                        # Loading spinner
+                        with st.spinner("Loading storage metrics..."):
+                            # Get storage metrics from API
+                            metrics = AsyncToSync.run(
+                                self.api_client.get_cluster_storage_metrics(selected_id)
+                            )
+                            
+                            if metrics:
+                                # Storage chart
+                                storage_data = metrics["storage_usage"]
+                                storage_df = pd.DataFrame([
+                                    {
+                                        "PV Name": item["pv_name"],
+                                        "Capacity (GB)": item["capacity_gb"],
+                                        "Used (GB)": item["used_gb"],
+                                        "Available (GB)": item["available_gb"],
+                                        "Usage (%)": item["usage_percentage"]
+                                    }
+                                    for item in storage_data
+                                ])
+                                
+                                st.dataframe(storage_df, use_container_width=True)
+                                
+                                # Bar chart for storage usage
+                                fig = px.bar(
+                                    storage_df,
+                                    x="PV Name",
+                                    y=["Used (GB)", "Available (GB)"],
+                                    title="Storage Usage",
+                                    barmode="stack"
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.info("No storage metrics available for this cluster.")
+                                
+                    with resources_tab:
+                        st.subheader(f"Kubernetes Resources for {selected_name}")
                         
-                        storage_df["Available (GB)"] = storage_df["Capacity (GB)"] - storage_df["Used (GB)"]
-                        storage_df["Usage (%)"] = (storage_df["Used (GB)"] / storage_df["Capacity (GB)"] * 100).round(1)
+                        resources_tabs = st.tabs(["Nodes", "Pods", "Services", "Persistent Volumes"])
                         
-                        st.dataframe(storage_df, use_container_width=True)
-                        
-                        # Bar chart for storage usage
-                        fig = px.bar(
-                            storage_df,
-                            x="PV Name",
-                            y=["Used (GB)", "Available (GB)"],
-                            title="Storage Usage",
-                            barmode="stack"
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
+                        with resources_tabs[0]:  # Nodes tab
+                            with st.spinner("Loading nodes..."):
+                                nodes = AsyncToSync.run(
+                                    self.api_client.get_cluster_nodes(selected_id)
+                                )
+                                
+                                if nodes:
+                                    nodes_df = pd.DataFrame(nodes)
+                                    st.dataframe(nodes_df, use_container_width=True)
+                                else:
+                                    st.info("No node information available for this cluster.")
+                                    
+                        with resources_tabs[1]:  # Pods tab
+                            namespace = st.selectbox(
+                                "Namespace",
+                                ["All Namespaces", "default", "kube-system", "monitoring"],
+                                key="pods_namespace"
+                            )
+                            
+                            with st.spinner("Loading pods..."):
+                                ns = None if namespace == "All Namespaces" else namespace
+                                pods = AsyncToSync.run(
+                                    self.api_client.get_cluster_pods(selected_id, namespace=ns)
+                                )
+                                
+                                if pods:
+                                    pods_df = pd.DataFrame(pods)
+                                    st.dataframe(pods_df, use_container_width=True)
+                                else:
+                                    st.info("No pod information available for this cluster.")
+                                    
+                        with resources_tabs[2]:  # Services tab
+                            namespace = st.selectbox(
+                                "Namespace",
+                                ["All Namespaces", "default", "kube-system", "monitoring"],
+                                key="services_namespace"
+                            )
+                            
+                            with st.spinner("Loading services..."):
+                                ns = None if namespace == "All Namespaces" else namespace
+                                services = AsyncToSync.run(
+                                    self.api_client.get_cluster_services(selected_id, namespace=ns)
+                                )
+                                
+                                if services:
+                                    services_df = pd.DataFrame(services)
+                                    st.dataframe(services_df, use_container_width=True)
+                                else:
+                                    st.info("No service information available for this cluster.")
+                                    
+                        with resources_tabs[3]:  # Persistent Volumes tab
+                            with st.spinner("Loading persistent volumes..."):
+                                pvs = AsyncToSync.run(
+                                    self.api_client.get_cluster_persistent_volumes(selected_id)
+                                )
+                                
+                                if pvs:
+                                    pvs_df = pd.DataFrame(pvs)
+                                    st.dataframe(pvs_df, use_container_width=True)
+                                else:
+                                    st.info("No persistent volume information available for this cluster.")
     
     def _render_mcp_servers_page(self):
         """Render the MCP servers management page."""
         st.header("MCP Servers")
         
-        # Get all MCP servers
-        servers = self.db_manager.get_all_mcp_servers()
+        # Get all MCP servers from API
+        servers = AsyncToSync.run(self.api_client.get_mcp_servers())
         
         # Tabs for different MCP server views
         list_tab, add_tab, tools_tab = st.tabs(["Servers List", "Add Server", "Available Tools"])
@@ -541,19 +687,26 @@ class StreamlitApp:
                 
                 # Create a simplified view for the table
                 servers_view = []
+                # Get server status
+                servers_status = AsyncToSync.run(self.api_client.get_mcp_servers_status())
+                status_dict = {s["id"]: s["is_connected"] for s in servers_status}
+                
                 for server in servers:
                     cluster_name = "None"
                     if server["cluster_id"]:
-                        cluster = self.db_manager.get_cluster(server["cluster_id"])
+                        cluster = AsyncToSync.run(self.api_client.get_cluster(server["cluster_id"]))
                         if cluster:
                             cluster_name = cluster["name"]
-                            
+                    
+                    # Get connection status from status endpoint
+                    is_connected = status_dict.get(server["id"], False)
+                    
                     servers_view.append({
                         "id": server["id"],
                         "name": server["name"],
                         "type": server["type"],
                         "cluster": cluster_name,
-                        "is_connected": self.mcp_hub.manager.is_server_connected(server["name"]),
+                        "is_connected": is_connected,
                         "is_local": bool(server["is_local"]),
                         "is_default": bool(server["is_default"])
                     })
@@ -575,7 +728,7 @@ class StreamlitApp:
                     selected_id, selected_name = server_id
                     
                     # Get server
-                    server = self.db_manager.get_mcp_server(selected_id)
+                    server = AsyncToSync.run(self.api_client.get_mcp_server(selected_id))
                     
                     # Display server details
                     with st.expander("Server Details", expanded=True):
@@ -595,31 +748,47 @@ class StreamlitApp:
                         with col2:
                             cluster_name = "None"
                             if server["cluster_id"]:
-                                cluster = self.db_manager.get_cluster(server["cluster_id"])
+                                cluster = AsyncToSync.run(self.api_client.get_cluster(server["cluster_id"]))
                                 if cluster:
                                     cluster_name = cluster["name"]
+                            
+                            # Get server status from API
+                            server_status = AsyncToSync.run(
+                                self.api_client.get_mcp_server_status(selected_id)
+                            )
+                            is_connected = server_status["is_connected"] if server_status else False
+                            status_text = "Connected" if is_connected else "Disconnected"
+                            status_color = "green" if is_connected else "red"
                             
                             st.markdown(f"**Cluster:** {cluster_name}")
                             st.markdown(f"**Local:** {'Yes' if server['is_local'] else 'No'}")
                             st.markdown(f"**Default:** {'Yes' if server['is_default'] else 'No'}")
-                            st.markdown(f"**Status:** {'Connected' if self.mcp_hub.manager.is_server_connected(server['name']) else 'Disconnected'}")
+                            st.markdown(f"**Status:** <span style='color:{status_color}'>{status_text}</span>", unsafe_allow_html=True)
                     
                     # Connect/disconnect buttons
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        if not self.mcp_hub.manager.is_server_connected(server['name']):
-                            if st.button(f"Connect to {server['name']}", key=f"mcp_connect_{server['id']}"):
-                                self._connect_to_server(server['name'])
+                        if st.button(f"Connect to {server['name']}", key=f"mcp_connect_{server['id']}"):
+                            success = AsyncToSync.run(
+                                self.api_client.connect_mcp_server(server["id"])
+                            )
+                            if success:
                                 st.success(f"Connected to server {server['name']}")
                                 st.rerun()
+                            else:
+                                st.error(f"Failed to connect to server {server['name']}")
                                 
                     with col2:
-                        if self.mcp_hub.manager.is_server_connected(server['name']):
-                            if st.button(f"Disconnect from {server['name']}", key=f"mcp_disconnect_{server['id']}"):
-                                self._disconnect_from_server(server['name'])
+                        if st.button(f"Disconnect from {server['name']}", key=f"mcp_disconnect_{server['id']}"):
+                            success = AsyncToSync.run(
+                                self.api_client.disconnect_mcp_server(server["id"])
+                            )
+                            if success:
                                 st.success(f"Disconnected from server {server['name']}")
                                 st.rerun()
+                            else:
+                                st.error(f"Failed to disconnect from server {server['name']}")
                     
                     # Server deletion
                     with st.expander("Danger Zone", expanded=False):
@@ -631,9 +800,14 @@ class StreamlitApp:
                         
                         if st.button("Delete Server", key=f"mcp_delete_{selected_id}"):
                             if confirm == selected_name:
-                                self._delete_server(selected_id)
-                                st.success(f"Server '{selected_name}' deleted successfully.")
-                                st.rerun()
+                                success = AsyncToSync.run(
+                                    self.api_client.delete_mcp_server(selected_id)
+                                )
+                                if success:
+                                    st.success(f"Server '{selected_name}' deleted successfully.")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed to delete server '{selected_name}'.")
                             else:
                                 st.error("Server name does not match. Deletion aborted.")
                     
@@ -645,7 +819,7 @@ class StreamlitApp:
                 server_type = st.selectbox("Server Type", ["stdio", "sse"])
                 
                 # Get all clusters for selection
-                clusters = self.db_manager.get_all_clusters()
+                clusters = AsyncToSync.run(self.api_client.get_clusters())
                 cluster_options = [(None, "None")] + [(c["id"], c["name"]) for c in clusters]
                 
                 cluster_id = st.selectbox(
@@ -687,21 +861,26 @@ class StreamlitApp:
                         selected_cluster_id = cluster_id[0] if cluster_id and cluster_id[0] is not None else None
                         
                         try:
-                            # Create server
-                            server_id = asyncio.run(self.mcp_hub.manager.add_server(
-                                name=name,
-                                server_type=server_type,
-                                command=command,
-                                args=args,
-                                url=url,
-                                cluster_id=selected_cluster_id,
-                                is_local=is_local,
-                                is_default=is_default,
-                                env=env,
-                            ))
+                            # Create server through API
+                            server_id = AsyncToSync.run(
+                                self.api_client.add_mcp_server(
+                                    name=name,
+                                    server_type=server_type,
+                                    command=command,
+                                    args=args,
+                                    url=url,
+                                    cluster_id=selected_cluster_id,
+                                    is_local=is_local,
+                                    is_default=is_default,
+                                    env=env,
+                                )
+                            )
                             
-                            st.success(f"Server '{name}' added successfully.")
-                            st.rerun()
+                            if server_id:
+                                st.success(f"Server '{name}' added successfully.")
+                                st.rerun()
+                            else:
+                                st.error("Failed to add server.")
                             
                         except Exception as e:
                             st.error(f"Failed to add server: {str(e)}")
@@ -709,173 +888,74 @@ class StreamlitApp:
                         st.error("Server name is required.")
                         
         with tools_tab:
-            # Get all connected servers
-            connected_servers = self.mcp_hub.manager.get_connected_servers()
-            
-            if not connected_servers:
-                st.info("No connected MCP servers. Connect to a server to view available tools.")
+            if not servers:
+                st.info("No MCP servers registered. Use the 'Add Server' tab to register one.")
             else:
-                # Get all available tools
-                all_tools = self.mcp_hub.get_all_available_tools()
+                # Select server for tools
+                server_id = st.selectbox(
+                    "Select server to view tools",
+                    options=[(s["id"], s["name"]) for s in servers],
+                    format_func=lambda x: f"{x[1]} (ID: {x[0]})",
+                    key="tools_server_select",
+                )
                 
-                if not all_tools:
-                    st.info("No tools available from connected servers.")
-                else:
-                    for server_name, tools in all_tools.items():
-                        st.subheader(f"Tools from {server_name}")
+                if server_id:
+                    selected_id, selected_name = server_id
+                    
+                    # Get server status
+                    server_status = AsyncToSync.run(
+                        self.api_client.get_mcp_server_status(selected_id)
+                    )
+                    is_connected = server_status["is_connected"] if server_status else False
+                    
+                    if not is_connected:
+                        st.warning(f"Server '{selected_name}' is not connected. Connect to the server to view available tools.")
                         
-                        if not tools:
-                            st.info(f"No tools available from {server_name}.")
-                            continue
-                            
-                        # Display tools in an expander
-                        for tool in tools:
-                            tool_name = tool.get("name", "Unknown")
-                            tool_desc = tool.get("description", "No description available")
-                            
-                            with st.expander(f"{tool_name}", expanded=False):
-                                st.markdown(f"**Description:** {tool_desc}")
+                        if st.button("Connect Server", key="tools_connect_server"):
+                            success = AsyncToSync.run(
+                                self.api_client.connect_mcp_server(selected_id)
+                            )
+                            if success:
+                                st.success(f"Connected to server {selected_name}")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to connect to server {selected_name}")
+                    else:
+                        # Fetch tools and resources
+                        tools_tab, resources_tab = st.tabs(["Tools", "Resources"])
+                        
+                        with tools_tab:
+                            with st.spinner("Loading tools..."):
+                                tools = AsyncToSync.run(
+                                    self.api_client.get_mcp_server_tools(selected_id)
+                                )
                                 
-                                # Display input schema if available
-                                if "inputSchema" in tool and "properties" in tool["inputSchema"]:
-                                    st.markdown("**Parameters:**")
-                                    
-                                    properties = tool["inputSchema"]["properties"]
-                                    required = tool["inputSchema"].get("required", [])
-                                    
-                                    for param_name, param_info in properties.items():
-                                        param_type = param_info.get("type", "any")
-                                        param_desc = param_info.get("description", "")
-                                        is_required = param_name in required
-                                        req_marker = " (required)" if is_required else " (optional)"
-                                        
-                                        st.markdown(f"- **{param_name}**: {param_type}{req_marker} - {param_desc}")
-    
-    # Helper methods
-    def _connect_to_server(self, server_name: str) -> bool:
-        """Connect to an MCP server.
-        
-        Args:
-            server_name: Server name.
-            
-        Returns:
-            True if connection was successful, False otherwise.
-        """
-        try:
-            # Use asyncio.run instead of manually creating an event loop
-            success = asyncio.run(self.mcp_hub.manager.connect_server(server_name))
-            return success
-        except Exception as e:
-            logger.error(f"Error connecting to server {server_name}: {str(e)}")
-            return False
-    
-    def _disconnect_from_server(self, server_name: str) -> bool:
-        """Disconnect from an MCP server.
-        
-        Args:
-            server_name: Server name.
-            
-        Returns:
-            True if disconnection was successful, False otherwise.
-        """
-        try:
-            # Use asyncio.run instead of manually creating an event loop
-            success = asyncio.run(self.mcp_hub.manager.disconnect_server(server_name))
-            return success
-        except Exception as e:
-            logger.error(f"Error disconnecting from server {server_name}: {str(e)}")
-            return False
-    
-    def _add_cluster(self, name: str, ip: str, port: int, description: Optional[str] = None) -> int:
-        """Add a new cluster.
-        
-        Args:
-            name: Cluster name.
-            ip: Cluster IP address.
-            port: Cluster port.
-            description: Optional cluster description.
-            
-        Returns:
-            Cluster ID.
-        """
-        try:
-            # Add cluster to database
-            cluster_id = self.db_manager.add_cluster(
-                name=name,
-                ip=ip,
-                port=port,
-                description=description,
-            )
-            
-            return cluster_id
-            
-        except Exception as e:
-            logger.error(f"Error adding cluster: {str(e)}")
-            raise
-    
-    def _delete_cluster(self, cluster_id: int) -> bool:
-        """Delete a cluster.
-        
-        Args:
-            cluster_id: Cluster ID.
-            
-        Returns:
-            True if deletion was successful, False otherwise.
-        """
-        try:
-            # Get MCP servers for this cluster
-            servers = self.db_manager.get_mcp_servers_by_cluster(cluster_id)
-            
-            # Disconnect any connected servers
-            for server in servers:
-                self._disconnect_from_server(server["name"])
-                
-            # Delete cluster
-            success = self.db_manager.delete_cluster(cluster_id)
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"Error deleting cluster: {str(e)}")
-            return False
-    
-    def _delete_server(self, server_id: int) -> bool:
-        """Delete an MCP server.
-        
-        Args:
-            server_id: Server ID.
-            
-        Returns:
-            True if deletion was successful, False otherwise.
-        """
-        try:
-            # Get server
-            server = self.db_manager.get_mcp_server(server_id)
-            
-            if not server:
-                return False
-                
-            # Disconnect if connected
-            if self.mcp_hub.manager.is_server_connected(server["name"]):
-                self._disconnect_from_server(server["name"])
-                
-            # Use asyncio.run instead of manually creating an event loop
-            success = asyncio.run(self.mcp_hub.manager.remove_server(server_id))
-            return success
-                
-        except Exception as e:
-            logger.error(f"Error deleting server: {str(e)}")
-            return False
+                                if tools:
+                                    for tool in tools:
+                                        with st.expander(f"Tool: {tool.get('name', 'Unknown')}"):
+                                            st.json(tool)
+                                else:
+                                    st.info(f"No tools available for server '{selected_name}'")
+                        
+                        with resources_tab:
+                            with st.spinner("Loading resources..."):
+                                resources = AsyncToSync.run(
+                                    self.api_client.get_mcp_server_resources(selected_id)
+                                )
+                                
+                                if resources:
+                                    for resource in resources:
+                                        with st.expander(f"Resource: {resource.get('uri', 'Unknown')}"):
+                                            st.json(resource)
+                                else:
+                                    st.info(f"No resources available for server '{selected_name}'")
 
 
-def run_app(config: Configuration, db_manager: DatabaseManager, mcp_hub: MCPHub, react_loop: ReactLoop):
+def run_app(api_url: str = "http://localhost:8000"):
     """Run the Streamlit application.
     
     Args:
-        config: Configuration instance.
-        db_manager: Database manager instance.
-        mcp_hub: MCP hub instance.
-        react_loop: ReactLoop instance.
+        api_url: URL of the API server.
     """
-    app = StreamlitApp(config, db_manager, mcp_hub, react_loop)
+    app = StreamlitApp(api_url=api_url)
     app.run()

@@ -1,6 +1,7 @@
 """API routes for KubeMindNexus."""
 
 import logging
+import time
 from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, status
@@ -25,6 +26,15 @@ app = FastAPI(
 
 # Create router
 router = APIRouter()
+
+# Pydantic models for responses
+class ServerStatus(BaseModel):
+    """Model for MCP server status."""
+    
+    id: int = Field(..., description="Server ID")
+    name: str = Field(..., description="Server name")
+    is_connected: bool = Field(..., description="Whether the server is connected")
+    
 
 
 # Dependency to get database manager
@@ -698,6 +708,507 @@ async def clear_chat_history(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to clear chat history: {str(e)}",
+        )
+
+
+# MCP server status endpoints
+@router.get("/mcp-servers/status", response_model=List[ServerStatus])
+async def get_all_mcp_servers_status(
+    mcp_hub: MCPHub = Depends(get_mcp_hub),
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get status of all MCP servers."""
+    try:
+        servers = db_manager.get_all_mcp_servers()
+        result = []
+        
+        for server in servers:
+            is_connected = mcp_hub.manager.is_server_connected(server["name"])
+            result.append({
+                "id": server["id"],
+                "name": server["name"],
+                "is_connected": is_connected,
+            })
+            
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to get MCP server status: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get MCP server status: {str(e)}",
+        )
+
+
+@router.get("/mcp-servers/{server_id}/status", response_model=ServerStatus)
+async def get_mcp_server_status(
+    server_id: int,
+    mcp_hub: MCPHub = Depends(get_mcp_hub),
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get status of a specific MCP server."""
+    try:
+        server = db_manager.get_mcp_server(server_id)
+        if not server:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"MCP server with ID {server_id} not found",
+            )
+            
+        is_connected = mcp_hub.manager.is_server_connected(server["name"])
+        
+        return {
+            "id": server["id"],
+            "name": server["name"],
+            "is_connected": is_connected,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get MCP server status: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get MCP server status: {str(e)}",
+        )
+
+
+# MCP server tools and resources endpoints
+@router.get("/mcp-servers/{server_id}/tools", response_model=List[Dict[str, Any]])
+async def get_mcp_server_tools(
+    server_id: int,
+    mcp_hub: MCPHub = Depends(get_mcp_hub),
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get available tools for a specific MCP server."""
+    try:
+        server = db_manager.get_mcp_server(server_id)
+        if not server:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"MCP server with ID {server_id} not found",
+            )
+            
+        # Get server instance from the hub
+        server_instance = mcp_hub.manager.get_server_by_name(server["name"])
+        if not server_instance:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"MCP server instance '{server['name']}' not found in hub",
+            )
+            
+        # Check if server is connected
+        if not mcp_hub.manager.is_server_connected(server["name"]):
+            return []  # Return empty list if server is not connected
+            
+        # This would typically call server_instance.list_tools() method
+        # For now, return empty list as implementation depends on MCP server interface
+        # In a real implementation, this would fetch actual tools from the MCP server
+        return []
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get MCP server tools: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get MCP server tools: {str(e)}",
+        )
+
+
+@router.get("/mcp-servers/{server_id}/resources", response_model=List[Dict[str, Any]])
+async def get_mcp_server_resources(
+    server_id: int,
+    mcp_hub: MCPHub = Depends(get_mcp_hub),
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get available resources for a specific MCP server."""
+    try:
+        server = db_manager.get_mcp_server(server_id)
+        if not server:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"MCP server with ID {server_id} not found",
+            )
+            
+        # Get server instance from the hub
+        server_instance = mcp_hub.manager.get_server_by_name(server["name"])
+        if not server_instance:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"MCP server instance '{server['name']}' not found in hub",
+            )
+            
+        # Check if server is connected
+        if not mcp_hub.manager.is_server_connected(server["name"]):
+            return []  # Return empty list if server is not connected
+            
+        # This would typically call server_instance.list_resources() method
+        # For now, return empty list as implementation depends on MCP server interface
+        # In a real implementation, this would fetch actual resources from the MCP server
+        return []
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get MCP server resources: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get MCP server resources: {str(e)}",
+        )
+
+
+# Cluster metrics endpoints
+class ClusterMetrics(BaseModel):
+    """Base model for cluster metrics."""
+    
+    cluster_id: int = Field(..., description="Cluster ID")
+    cluster_name: str = Field(..., description="Cluster name")
+    timestamp: str = Field(..., description="Timestamp of the metrics")
+
+
+class PerformanceMetrics(ClusterMetrics):
+    """Model for cluster performance metrics."""
+    
+    cpu_usage: List[Dict[str, Any]] = Field(..., description="CPU usage over time")
+    memory_usage: List[Dict[str, Any]] = Field(..., description="Memory usage over time")
+
+
+class HealthMetrics(ClusterMetrics):
+    """Model for cluster health metrics."""
+    
+    node_status: str = Field(..., description="Overall node status")
+    pod_health_percentage: float = Field(..., description="Percentage of healthy pods")
+    services_count: Dict[str, int] = Field(..., description="Count of services by status")
+    pod_status: Dict[str, int] = Field(..., description="Count of pods by status")
+
+
+class StorageMetrics(ClusterMetrics):
+    """Model for cluster storage metrics."""
+    
+    storage_usage: List[Dict[str, Any]] = Field(..., description="Storage usage by persistent volume")
+
+
+@router.get("/clusters/{cluster_id}/metrics/performance", response_model=PerformanceMetrics)
+async def get_cluster_performance_metrics(
+    cluster_id: int,
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get performance metrics for a specific cluster."""
+    try:
+        cluster = db_manager.get_cluster(cluster_id)
+        if not cluster:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cluster with ID {cluster_id} not found",
+            )
+            
+        # In a real implementation, this would fetch actual metrics from the Kubernetes cluster
+        # For now, return example metrics
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Example CPU usage data
+        cpu_data = [
+            {"time": f"T-{i}", "usage": round(40 + 30 * (0.5 + 0.5 * (i % 3 - 1)), 2)}
+            for i in range(10, 0, -1)
+        ]
+        
+        # Example memory usage data
+        memory_data = [
+            {"time": f"T-{i}", "usage_gb": round(4 + 2 * (0.5 + 0.5 * (i % 5 - 2)), 2)}
+            for i in range(10, 0, -1)
+        ]
+        
+        return {
+            "cluster_id": cluster_id,
+            "cluster_name": cluster["name"],
+            "timestamp": current_time,
+            "cpu_usage": cpu_data,
+            "memory_usage": memory_data,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get cluster performance metrics: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cluster performance metrics: {str(e)}",
+        )
+
+
+@router.get("/clusters/{cluster_id}/metrics/health", response_model=HealthMetrics)
+async def get_cluster_health_metrics(
+    cluster_id: int,
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get health metrics for a specific cluster."""
+    try:
+        cluster = db_manager.get_cluster(cluster_id)
+        if not cluster:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cluster with ID {cluster_id} not found",
+            )
+            
+        # In a real implementation, this would fetch actual metrics from the Kubernetes cluster
+        # For now, return example metrics
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Example pod status
+        pod_status = {
+            "Running": 25,
+            "Pending": 2,
+            "Failed": 0,
+            "Succeeded": 5,
+            "Unknown": 0,
+        }
+        
+        return {
+            "cluster_id": cluster_id,
+            "cluster_name": cluster["name"],
+            "timestamp": current_time,
+            "node_status": "Healthy",
+            "pod_health_percentage": 98.0,
+            "services_count": {"Total": 15, "Healthy": 15},
+            "pod_status": pod_status,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get cluster health metrics: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cluster health metrics: {str(e)}",
+        )
+
+
+@router.get("/clusters/{cluster_id}/metrics/storage", response_model=StorageMetrics)
+async def get_cluster_storage_metrics(
+    cluster_id: int,
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get storage metrics for a specific cluster."""
+    try:
+        cluster = db_manager.get_cluster(cluster_id)
+        if not cluster:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cluster with ID {cluster_id} not found",
+            )
+            
+        # In a real implementation, this would fetch actual metrics from the Kubernetes cluster
+        # For now, return example metrics
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Example storage data
+        storage_data = [
+            {
+                "pv_name": f"pv-{i}",
+                "capacity_gb": capacity,
+                "used_gb": used,
+                "available_gb": capacity - used,
+                "usage_percentage": round((used / capacity) * 100, 1),
+            }
+            for i, (capacity, used) in enumerate(
+                [(100, 78), (50, 32), (200, 150), (75, 60), (150, 25)], 1
+            )
+        ]
+        
+        return {
+            "cluster_id": cluster_id,
+            "cluster_name": cluster["name"],
+            "timestamp": current_time,
+            "storage_usage": storage_data,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get cluster storage metrics: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cluster storage metrics: {str(e)}",
+        )
+
+
+# Kubernetes resources endpoints
+@router.get("/clusters/{cluster_id}/nodes", response_model=List[Dict[str, Any]])
+async def get_cluster_nodes(
+    cluster_id: int,
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get nodes for a specific cluster."""
+    try:
+        cluster = db_manager.get_cluster(cluster_id)
+        if not cluster:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cluster with ID {cluster_id} not found",
+            )
+            
+        # In a real implementation, this would fetch actual nodes from the Kubernetes cluster
+        # For now, return example nodes
+        nodes = [
+            {
+                "name": f"node-{i}",
+                "status": "Ready",
+                "role": "worker" if i > 1 else "master",
+                "cpu": "4",
+                "memory": "16Gi",
+                "kubernetes_version": "1.26.0",
+                "created_at": "2024-04-01T12:00:00Z",
+            }
+            for i in range(1, 4)
+        ]
+        
+        return nodes
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get cluster nodes: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cluster nodes: {str(e)}",
+        )
+
+
+@router.get("/clusters/{cluster_id}/pods", response_model=List[Dict[str, Any]])
+async def get_cluster_pods(
+    cluster_id: int,
+    namespace: Optional[str] = None,
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get pods for a specific cluster, optionally filtered by namespace."""
+    try:
+        cluster = db_manager.get_cluster(cluster_id)
+        if not cluster:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cluster with ID {cluster_id} not found",
+            )
+            
+        # In a real implementation, this would fetch actual pods from the Kubernetes cluster
+        # For now, return example pods
+        namespaces = ["default", "kube-system", "monitoring"] if namespace is None else [namespace]
+        
+        pods = []
+        for ns in namespaces:
+            ns_pods = [
+                {
+                    "name": f"pod-{ns}-{i}",
+                    "namespace": ns,
+                    "status": "Running" if i % 5 != 0 else "Pending",
+                    "node": f"node-{(i % 3) + 1}",
+                    "ip": f"10.0.{ns.replace('-', '.')}.{i}",
+                    "created_at": "2024-04-01T12:00:00Z",
+                }
+                for i in range(1, 6)
+            ]
+            pods.extend(ns_pods)
+        
+        return pods
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get cluster pods: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cluster pods: {str(e)}",
+        )
+
+
+@router.get("/clusters/{cluster_id}/services", response_model=List[Dict[str, Any]])
+async def get_cluster_services(
+    cluster_id: int,
+    namespace: Optional[str] = None,
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get services for a specific cluster, optionally filtered by namespace."""
+    try:
+        cluster = db_manager.get_cluster(cluster_id)
+        if not cluster:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cluster with ID {cluster_id} not found",
+            )
+            
+        # In a real implementation, this would fetch actual services from the Kubernetes cluster
+        # For now, return example services
+        namespaces = ["default", "kube-system", "monitoring"] if namespace is None else [namespace]
+        
+        services = []
+        for ns in namespaces:
+            ns_services = [
+                {
+                    "name": f"service-{ns}-{i}",
+                    "namespace": ns,
+                    "type": "ClusterIP" if i % 3 != 0 else "LoadBalancer",
+                    "cluster_ip": f"10.1.{ns.replace('-', '.')}.{i}",
+                    "external_ip": f"192.168.1.{i}" if i % 3 == 0 else None,
+                    "ports": [
+                        {"port": 80, "target_port": 8080, "protocol": "TCP"}
+                    ],
+                    "created_at": "2024-04-01T12:00:00Z",
+                }
+                for i in range(1, 4)
+            ]
+            services.extend(ns_services)
+        
+        return services
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get cluster services: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cluster services: {str(e)}",
+        )
+
+
+@router.get("/clusters/{cluster_id}/persistent-volumes", response_model=List[Dict[str, Any]])
+async def get_cluster_persistent_volumes(
+    cluster_id: int,
+    db_manager: DatabaseManager = Depends(get_db_manager),
+):
+    """Get persistent volumes for a specific cluster."""
+    try:
+        cluster = db_manager.get_cluster(cluster_id)
+        if not cluster:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cluster with ID {cluster_id} not found",
+            )
+            
+        # In a real implementation, this would fetch actual PVs from the Kubernetes cluster
+        # For now, return example PVs
+        pvs = [
+            {
+                "name": f"pv-{i}",
+                "capacity": f"{capacity}Gi",
+                "access_modes": ["ReadWriteOnce"],
+                "reclaim_policy": "Retain",
+                "status": "Bound",
+                "claim": f"default/pvc-{i}",
+                "storage_class": "standard",
+                "created_at": "2024-04-01T12:00:00Z",
+            }
+            for i, capacity in enumerate([100, 50, 200, 75, 150], 1)
+        ]
+        
+        return pvs
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get cluster persistent volumes: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cluster persistent volumes: {str(e)}",
         )
 
 

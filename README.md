@@ -210,6 +210,18 @@ API endpoints include:
 - `/api/mcp-servers` - MCP server management
 - `/api/chat` - Chat endpoints
 - `/api/llm-config` - LLM configuration
+- `/api/mcp-servers/status` - MCP server status
+- `/api/mcp-servers/{server_id}/tools` - MCP server tools
+- `/api/mcp-servers/{server_id}/resources` - MCP server resources
+- `/api/clusters/{cluster_id}/metrics/performance` - Cluster performance metrics
+- `/api/clusters/{cluster_id}/metrics/health` - Cluster health metrics
+- `/api/clusters/{cluster_id}/metrics/storage` - Cluster storage metrics
+- `/api/clusters/{cluster_id}/nodes` - Cluster nodes
+- `/api/clusters/{cluster_id}/pods` - Cluster pods
+- `/api/clusters/{cluster_id}/services` - Cluster services
+- `/api/clusters/{cluster_id}/persistent-volumes` - Cluster persistent volumes
+
+For detailed API documentation, see the [API Reference](docs/api_reference.md).
 
 ## Adding Clusters
 
