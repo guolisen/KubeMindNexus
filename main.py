@@ -163,11 +163,9 @@ async def run_api_server(
 
 
 async def run_server(
-    config_path: Optional[str] = None,
-    api_host: Optional[str] = None,
-    api_port: Optional[int] = None,
-    ui_port: Optional[int] = None,
-    mode: str = "both",
+    config : Configuration,
+    api_host: str,
+    api_port: int
 ) -> None:
     """Run the KubeMindNexus server.
     
@@ -175,30 +173,8 @@ async def run_server(
         config_path: Path to configuration file.
         api_host: API server host.
         api_port: API server port.
-        ui_port: UI server port.
-        mode: Server mode - api, ui, or both.
     """
     try:
-        # Initialize configuration
-        config = Configuration(config_path)
-        logger.info("Configuration initialized.")
-        
-        # Use provided parameters or defaults from config
-        api_host = api_host or config.config.api_host
-        api_port = api_port or config.config.api_port
-        ui_port = ui_port or config.config.ui_port
-        
-        ui_process = None
-        '''
-        # Start UI server if mode is 'ui' or 'both'
-        if mode in ["ui", "both"]:
-            logger.info(f"Starting UI server (mode: {mode})...")
-            ui_process = multiprocessing.Process(
-                target=run_ui_server,
-                args=(config, ui_port),
-            )
-            ui_process.start()
-        '''
         # Initialize database
         db_manager = DatabaseManager(config)
         logger.info("Database initialized.")
@@ -258,9 +234,8 @@ async def run_server(
         await startup_mcp_servers(config, mcp_hub)
         
         # Start API server if mode is 'api' or 'both'
-        if mode in ["api", "both"]:
-            logger.info(f"Starting API server (mode: {mode})...")
-            await run_api_server(config, api_host, api_port)
+        logger.info(f"Starting API server...")
+        await run_api_server(config, api_host, api_port)
         
     except KeyboardInterrupt:
         logger.info("Server shutdown requested...")
@@ -272,10 +247,6 @@ async def run_server(
         # Clean up resources
         if 'db_manager' in locals():
             db_manager.close()
-            
-        if 'ui_process' in locals() and ui_process.is_alive():
-            ui_process.terminate()
-            ui_process.join()
             
         logger.info("Server shutdown complete.")
 
@@ -348,16 +319,42 @@ def main() -> None:
     # Print banner
     print_banner()
     
-    # Run server
-    asyncio.run(
-        run_server(
-            config_path=args.config,
-            api_host=args.api_host,
-            api_port=args.api_port,
-            ui_port=args.ui_port,
-            mode=args.mode,
+    # Initialize configuration
+    config = Configuration(args.config)
+    logger.info("Configuration initialized.")
+    
+    # Use provided parameters or defaults from config
+    api_host = args.api_host or config.config.api_host
+    api_port = args.api_port or config.config.api_port
+    ui_port = args.ui_port or config.config.ui_port
+    
+    ui_process = None
+
+    # Start UI server if mode is 'ui' or 'both'
+    if args.mode in ["ui", "both"]:
+        logger.info(f"Starting UI server (mode: {args.mode})...")
+        ui_process = multiprocessing.Process(
+            target=run_ui_server,
+            args=(config, ui_port),
         )
-    )
+        ui_process.start()
+        if args.mode == "ui":
+            # Wait for UI server to finish if only UI mode is selected
+            ui_process.join()
+            return
+        else:
+            # If both servers are running, wait for UI server to finish in the background
+            logger.info("UI server running in background...")
+
+    # Run server
+    if args.mode in ["api", "both"]:
+        logger.info(f"Starting API server (mode: {args.mode})...")
+        # Run API server in the main thread
+        # Use asyncio.run to run the async function
+        logger.info("Running API server...")
+        asyncio.run(
+            run_server(config, api_host, api_port)
+        )
 
 
 def print_banner() -> None:
