@@ -94,16 +94,12 @@ async def startup_mcp_servers(
 
 def run_ui_server(
     config: Configuration,
-    db_manager: DatabaseManager,
-    mcp_hub: MCPHub,
-    react_loop: ReactLoop,
     port: int,
 ) -> None:
     """Run the Streamlit UI server.
     
     Args:
         config: Configuration instance.
-        db_manager: Database manager instance.
         mcp_hub: MCP hub instance.
         react_loop: ReactLoop instance.
         port: UI server port.
@@ -192,6 +188,17 @@ async def run_server(
         api_port = api_port or config.config.api_port
         ui_port = ui_port or config.config.ui_port
         
+        ui_process = None
+        
+        # Start UI server if mode is 'ui' or 'both'
+        if mode in ["ui", "both"]:
+            logger.info(f"Starting UI server (mode: {mode})...")
+            ui_process = multiprocessing.Process(
+                target=run_ui_server,
+                args=(config, ui_port),
+            )
+            ui_process.start()
+        
         # Initialize database
         db_manager = DatabaseManager(config)
         logger.info("Database initialized.")
@@ -240,26 +247,15 @@ async def run_server(
             )
         
         # Initialize ReactLoop with correct parameter order
-        react_loop = ReactLoop(config, db_manager, mcp_hub, default_llm)
-        logger.info("ReactLoop initialized.")
+        #react_loop = ReactLoop(config, db_manager, mcp_hub, default_llm)
+        #logger.info("ReactLoop initialized.")
         
         # Set up API app
-        setup_api_app(config, db_manager, mcp_hub, react_loop)
+        setup_api_app(config, db_manager, mcp_hub, None)
         logger.info("API app set up.")
         
         # Connect to default MCP servers
         await startup_mcp_servers(config, mcp_hub)
-        
-        ui_process = None
-        
-        # Start UI server if mode is 'ui' or 'both'
-        if mode in ["ui", "both"]:
-            logger.info(f"Starting UI server (mode: {mode})...")
-            ui_process = multiprocessing.Process(
-                target=run_ui_server,
-                args=(config, db_manager, mcp_hub, react_loop, ui_port),
-            )
-            ui_process.start()
         
         # Start API server if mode is 'api' or 'both'
         if mode in ["api", "both"]:
