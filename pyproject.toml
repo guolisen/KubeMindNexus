@@ -34,6 +34,7 @@ dependencies = [
     "websockets>=11.0.3",
     "openai>=1.0.0",
     "mcp>=0.1.0",
+    "build>=1.2.2.post1",
 ]
 
 [project.urls]

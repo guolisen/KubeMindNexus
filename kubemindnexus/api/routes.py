@@ -724,12 +724,14 @@ async def get_all_mcp_servers_status(
         
         for server in servers:
             is_connected = mcp_hub.manager.is_server_connected(server["name"])
-            result.append({
-                "id": server["id"],
-                "name": server["name"],
-                "is_connected": is_connected,
-            })
-            
+            # Explicitly convert types to ensure they match the Pydantic model
+            server_status = ServerStatus(
+                id=int(server["id"]),
+                name=str(server["name"]),
+                is_connected=bool(is_connected),
+            )
+            result.append(server_status.dict())
+
         return result
         
     except Exception as e:
@@ -757,11 +759,11 @@ async def get_mcp_server_status(
             
         is_connected = mcp_hub.manager.is_server_connected(server["name"])
         
-        return {
-            "id": server["id"],
-            "name": server["name"],
-            "is_connected": is_connected,
-        }
+        return ServerStatus(
+            id=server["id"],
+            name=server["name"],
+            is_connected=is_connected,
+        ).dict()
         
     except HTTPException:
         raise
