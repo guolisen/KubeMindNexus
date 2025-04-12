@@ -801,10 +801,18 @@ async def get_mcp_server_tools(
         if not mcp_hub.manager.is_server_connected(server["name"]):
             return []  # Return empty list if server is not connected
             
-        # This would typically call server_instance.list_tools() method
-        # For now, return empty list as implementation depends on MCP server interface
-        # In a real implementation, this would fetch actual tools from the MCP server
-        return []
+        # Get tools from the server using the tools property
+        tools = []
+        for tool_name in [tool.name for tool in server_instance.tools]:
+            tool = server_instance.get_tool(tool_name)
+            if tool:
+                tools.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema
+                })
+                
+        return tools
         
     except HTTPException:
         raise
@@ -843,10 +851,17 @@ async def get_mcp_server_resources(
         if not mcp_hub.manager.is_server_connected(server["name"]):
             return []  # Return empty list if server is not connected
             
-        # This would typically call server_instance.list_resources() method
-        # For now, return empty list as implementation depends on MCP server interface
-        # In a real implementation, this would fetch actual resources from the MCP server
-        return []
+        # Get resources from the server using the resources property
+        resources_list = []
+        for resource in server_instance.resources:
+            resources_list.append({
+                "uri": resource.uri,
+                "name": resource.name,
+                "mime_type": resource.mime_type,
+                "description": resource.description
+            })
+            
+        return resources_list
         
     except HTTPException:
         raise
