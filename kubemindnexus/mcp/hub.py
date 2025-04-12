@@ -114,8 +114,8 @@ class MCPHub:
         connected_servers = self.manager.get_connected_servers()
         
         for server in connected_servers:
-            for tool in server.available_tools:
-                if tool.get("name") == tool_name:
+            for tool in server.tools:
+                if tool.name == tool_name:
                     return server.name
         
         return None
@@ -132,8 +132,12 @@ class MCPHub:
         connected_servers = self.manager.get_connected_servers()
         
         for server in connected_servers:
-            if server.available_tools:
-                result[server.name] = server.available_tools
+            if server.tools:
+                # Convert Tool objects to dictionaries
+                result[server.name] = [
+                    {"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema}
+                    for tool in server.tools
+                ]
         
         return result
     
@@ -152,8 +156,12 @@ class MCPHub:
         cluster_servers = self.manager.get_servers_by_cluster(cluster_name)
         
         for server in cluster_servers:
-            if server.name in self.manager.connected_servers and server.available_tools:
-                result[server.name] = server.available_tools
+            if server.name in self.manager.connected_servers and server.tools:
+                # Convert Tool objects to dictionaries
+                result[server.name] = [
+                    {"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema}
+                    for tool in server.tools
+                ]
         
         return result
     
@@ -169,8 +177,12 @@ class MCPHub:
         local_servers = self.manager.get_local_servers()
         
         for server in local_servers:
-            if server.name in self.manager.connected_servers and server.available_tools:
-                result[server.name] = server.available_tools
+            if server.name in self.manager.connected_servers and server.tools:
+                # Convert Tool objects to dictionaries
+                result[server.name] = [
+                    {"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema}
+                    for tool in server.tools
+                ]
         
         return result
     
@@ -189,12 +201,26 @@ class MCPHub:
             resources = []
             
             # Add direct resources
-            if server.available_resources:
-                resources.extend(server.available_resources)
+            if server.resources:
+                # Convert Resource objects to dictionaries
+                for resource in server.resources:
+                    resources.append({
+                        "uri": resource.uri,
+                        "name": resource.name,
+                        "mime_type": resource.mime_type,
+                        "description": resource.description
+                    })
                 
             # Add resource templates
             if server.resource_templates:
-                resources.extend(server.resource_templates)
+                # Convert ResourceTemplate objects to dictionaries
+                for template in server.resource_templates:
+                    resources.append({
+                        "uri_template": template.uri_template,
+                        "name": template.name,
+                        "mime_type": template.mime_type,
+                        "description": template.description
+                    })
                 
             if resources:
                 result[server.name] = resources
@@ -237,9 +263,9 @@ class MCPHub:
                     
                     # Find a suitable tool (e.g. get_status, get_info)
                     tool_name = None
-                    for tool in server.available_tools:
-                        if "status" in tool.get("name", "").lower() or "info" in tool.get("name", "").lower():
-                            tool_name = tool.get("name")
+                    for tool in server.tools:
+                        if "status" in tool.name.lower() or "info" in tool.name.lower():
+                            tool_name = tool.name
                             break
                     
                     if tool_name:
