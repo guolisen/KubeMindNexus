@@ -1,4 +1,9 @@
-"""ReAct loop implementation for KubeMindNexus."""
+"""ReAct loop implementation for KubeMindNexus.
+
+This module provides an enhanced ReAct (Reasoning + Acting) loop implementation
+that supports modular system prompts, better context management, and improved
+error handling.
+"""
 
 import asyncio
 import json
@@ -10,6 +15,7 @@ from ..config import Configuration
 from ..constants import REACT_MAX_ITERATIONS, REACT_SAFETY_TIMEOUT
 from ..database import DatabaseManager
 from ..mcp.hub import MCPHub
+from ..prompts.system import generate_system_prompt, generate_tool_format
 from .base import BaseLLM, LLMMessage, MessageRole
 
 logger = logging.getLogger(__name__)
@@ -48,7 +54,7 @@ class ReactLoop:
         conversation_history: Optional[List[Tuple[str, str]]] = None,
         current_cluster: Optional[str] = None,
     ) -> Tuple[str, int]:
-        """Run the ReAct loop.
+        """Run the ReAct loop with enhanced system prompt and context management.
         
         Args:
             user_message: User input message.
@@ -78,7 +84,7 @@ class ReactLoop:
         # Get available tools
         all_tools = self.mcp_hub.get_all_available_tools()
         
-        # Flatten tools into a single list
+        # Flatten tools into a single list for LLM use
         tools: List[Dict[str, Any]] = []
         for server_name, server_tools in all_tools.items():
             tools.extend(server_tools)
@@ -89,17 +95,62 @@ class ReactLoop:
             if "inputSchema" not in tool and "parameters" in tool:
                 tool["inputSchema"] = tool["parameters"]
         
-        # Create system prompt with tool information and cluster context
-        system_prompt = self.config.config.system_prompt_template
-        if not system_prompt:
-            system_prompt = "You are KubeMindNexus, a Kubernetes management assistant."
-            
-        # Add tools information to system prompt
-        tools_description = self.mcp_hub.format_tools_for_prompt()
-        system_prompt = system_prompt.format(
-            available_tools=tools_description,
-            cluster_context=current_cluster or "None"
-        )
+        # Format tools for the system prompt
+        # Either use the enhanced formatter or fall back to the basic one
+        try:
+            tools_description = generate_tool_format(all_tools)
+            logger.info("Using enhanced tool formatting for system prompt")
+        except Exception as e:
+            logger.warning(f"Error using enhanced tool formatting, falling back to basic: {str(e)}")
+            tools_description = self.mcp_hub.format_tools_for_prompt()
+        
+        # Generate the system prompt
+        system_prompt_template = self.config.config.system_prompt_template
+        
+        if system_prompt_template == "use_enhanced":
+            try:
+                # Get system prompt options
+                system_prompt_options = getattr(self.config.config, "system_prompt_options", {})
+                if not system_prompt_options:
+                    system_prompt_options = {}
+                    
+                # Extract options with defaults
+                include_react_guidance = system_prompt_options.get("include_react_guidance", True)
+                include_mcp_guidance = system_prompt_options.get("include_mcp_guidance", True)
+                include_kubernetes_guidance = system_prompt_options.get("include_kubernetes_guidance", True)
+                
+                # Generate the enhanced modular system prompt
+                system_prompt = generate_system_prompt(
+                    available_tools=tools_description,
+                    cluster_context=current_cluster,
+                    include_mcp_guidance=include_mcp_guidance,
+                    include_react_guidance=include_react_guidance
+                )
+                logger.info("Using enhanced modular system prompt")
+            except Exception as e:
+                # Fall back to the legacy template if there's an error
+                logger.warning(f"Error generating enhanced system prompt, falling back to legacy: {str(e)}")
+                legacy_prompt = getattr(self.config.config, "legacy_system_prompt", None)
+                if legacy_prompt:
+                    system_prompt = legacy_prompt
+                else:
+                    system_prompt = "You are KubeMindNexus, a Kubernetes management assistant."
+                    
+                # Use the basic format with the template
+                system_prompt = system_prompt.format(
+                    available_tools=tools_description,
+                    cluster_context=current_cluster or "None"
+                )
+        else:
+            # Use the provided template
+            if not system_prompt_template:
+                system_prompt_template = "You are KubeMindNexus, a Kubernetes management assistant."
+                
+            # Format the template
+            system_prompt = system_prompt_template.format(
+                available_tools=tools_description,
+                cluster_context=current_cluster or "None"
+            )
         
         # Run the ReAct loop
         iteration = 0
@@ -107,10 +158,15 @@ class ReactLoop:
         final_response = "I encountered an error processing your request."
         
         while iteration < self.max_iterations:
-            # Check timeout
-            if time.time() - start_time > self.safety_timeout:
-                logger.warning("ReAct loop timed out")
-                final_response = "I'm taking too long to process your request. Please try again or rephrase your query."
+            # Check timeout with more detailed logging
+            elapsed_time = time.time() - start_time
+            if elapsed_time > self.safety_timeout:
+                logger.warning(f"ReAct loop timed out after {elapsed_time:.2f}s (limit: {self.safety_timeout}s)")
+                final_response = (
+                    "I'm taking too long to process your request. This might be due to the complexity "
+                    "of the task or current system load. Please try again with a more specific query "
+                    "or break your request into smaller steps."
+                )
                 break
                 
             iteration += 1
@@ -183,13 +239,31 @@ class ReactLoop:
                 # Generate final response (no tools this time)
                 final_response, _ = await self.llm.generate(final_messages, system_prompt)
         
-        # Save the conversation in the database
+        # Save the conversation in the database with more metadata
         try:
+            # Determine if we should include cluster information
+            cluster_id = None
+            if current_cluster:
+                # Try to find the cluster ID by name (if implemented in the db_manager)
+                try:
+                    cluster = self.db_manager.get_cluster_by_name(current_cluster)
+                    if cluster:
+                        cluster_id = cluster["id"]
+                except Exception as cluster_err:
+                    logger.warning(f"Could not get cluster ID: {str(cluster_err)}")
+            
+            # Add the chat message with additional metadata
             chat_id = self.db_manager.add_chat_message(
                 user_message=user_message,
                 assistant_message=final_response,
-                cluster_id=None  # We could look up the cluster ID by name here
+                cluster_id=cluster_id,
+                metadata={
+                    "iterations": iteration,
+                    "execution_time": time.time() - start_time,
+                    "tool_count": len(tool_messages) // 2  # Each tool use is 2 messages (call + result)
+                }
             )
+            logger.info(f"Saved chat message with ID {chat_id}")
         except Exception as e:
             logger.error(f"Failed to save chat message: {str(e)}")
         

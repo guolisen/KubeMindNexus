@@ -265,11 +265,23 @@ class MCPHub:
             if not server:
                 continue
                 
-            # Create server section
+            # Create server section with metadata
+            section_info = []
             if server.cluster_name:
                 section_title = f"Cluster '{server.cluster_name}' - Server '{server_name}'"
+                section_info.append(f"Cluster Context: {server.cluster_name}")
             else:
                 section_title = f"Server '{server_name}'"
+                
+            if server.is_local:
+                section_info.append("Type: Local Server")
+            else:
+                section_info.append("Type: Remote Server")
+                
+            # Add server metadata if available
+            section_header = [section_title]
+            if section_info:
+                section_header.append("  " + ", ".join(section_info))
                 
             tool_descriptions = []
             
@@ -296,9 +308,42 @@ class MCPHub:
                 if input_params:
                     tool_desc += "\n    Parameters:\n" + "\n".join(input_params)
                     
+                # Add example usage in JSON format
+                if properties:
+                    example = {
+                        "tool": name,
+                        "parameters": {}
+                    }
+                    
+                    # Add example values for required parameters
+                    for param_name, param_info in properties.items():
+                        if param_name in required:
+                            param_type = param_info.get("type", "string")
+                            example_value = ""
+                            
+                            if param_type == "string":
+                                example_value = f"<{param_name}>"
+                            elif param_type == "number" or param_type == "integer":
+                                example_value = 0
+                            elif param_type == "boolean":
+                                example_value = False
+                            elif param_type == "array":
+                                example_value = []
+                            elif param_type == "object":
+                                example_value = {}
+                                
+                            example["parameters"][param_name] = example_value
+                    
+                    # Format the example JSON
+                    try:
+                        example_json = json.dumps(example, indent=2)
+                        tool_desc += f"\n    Example Usage:\n    ```json\n{example_json}\n    ```"
+                    except Exception as e:
+                        logger.warning(f"Error formatting example JSON for tool {name}: {str(e)}")
+                    
                 tool_descriptions.append(tool_desc)
                 
             # Add server section to sections
-            sections.append(f"{section_title}:\n" + "\n".join(tool_descriptions))
+            sections.append("\n".join(section_header) + "\n\n" + "\n\n".join(tool_descriptions))
         
         return "\n\n".join(sections)

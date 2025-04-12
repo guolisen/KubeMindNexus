@@ -1,6 +1,12 @@
 {
   "db_path": "~/.config/kubemindnexus/kubemindnexus.db",
-  "system_prompt_template": "You are KubeMindNexus, an AI assistant specialized in Kubernetes cluster management.\nYou have access to the following tools:\n\n{available_tools}\n\nCurrent cluster context: {cluster_context}\n\nAlways respond in a helpful, concise manner focused on Kubernetes management tasks.",
+  "system_prompt_template": "use_enhanced",
+  "system_prompt_options": {
+    "include_react_guidance": true,
+    "include_mcp_guidance": true,
+    "include_kubernetes_guidance": true
+  },
+  "legacy_system_prompt": "You are KubeMindNexus, an AI assistant specialized in Kubernetes cluster management.\nYou have access to the following tools:\n\n{available_tools}\n\nCurrent cluster context: {cluster_context}\n\nAlways respond in a helpful, concise manner focused on Kubernetes management tasks.",
   "react_max_iterations": 5,
   "react_safety_timeout": 60,
   "ui_port": 8501,

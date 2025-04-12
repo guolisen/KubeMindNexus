@@ -20,6 +20,8 @@ class Config:
         self,
         db_path: str = DEFAULT_DB_PATH,
         system_prompt_template: str = DEFAULT_SYSTEM_PROMPT,
+        system_prompt_options: Optional[Dict[str, bool]] = None,
+        legacy_system_prompt: Optional[str] = None,
         react_max_iterations: int = REACT_MAX_ITERATIONS,
         react_safety_timeout: int = REACT_SAFETY_TIMEOUT,
         ui_port: int = DEFAULT_UI_PORT,
@@ -33,6 +35,8 @@ class Config:
         Args:
             db_path: SQLite database path.
             system_prompt_template: System prompt template for LLM.
+            system_prompt_options: Options for enhanced system prompt.
+            legacy_system_prompt: Legacy system prompt template for fallback.
             react_max_iterations: Maximum iterations for ReAct loop.
             react_safety_timeout: Safety timeout for ReAct loop (seconds).
             ui_port: UI server port.
@@ -43,6 +47,17 @@ class Config:
         """
         self.db_path = db_path
         self.system_prompt_template = system_prompt_template
+        
+        # Set default system prompt options if not provided
+        self.system_prompt_options = system_prompt_options or {
+            "include_react_guidance": True,
+            "include_mcp_guidance": True,
+            "include_kubernetes_guidance": True
+        }
+        
+        # Set legacy system prompt
+        self.legacy_system_prompt = legacy_system_prompt or DEFAULT_SYSTEM_PROMPT
+        
         self.react_max_iterations = react_max_iterations
         self.react_safety_timeout = react_safety_timeout
         self.ui_port = ui_port
@@ -75,6 +90,8 @@ class Config:
         return {
             "db_path": self.db_path,
             "system_prompt_template": self.system_prompt_template,
+            "system_prompt_options": self.system_prompt_options,
+            "legacy_system_prompt": self.legacy_system_prompt,
             "react_max_iterations": self.react_max_iterations,
             "react_safety_timeout": self.react_safety_timeout,
             "ui_port": self.ui_port,
@@ -97,6 +114,8 @@ class Config:
         return cls(
             db_path=data.get("db_path", DEFAULT_DB_PATH),
             system_prompt_template=data.get("system_prompt_template", DEFAULT_SYSTEM_PROMPT),
+            system_prompt_options=data.get("system_prompt_options", None),
+            legacy_system_prompt=data.get("legacy_system_prompt", None),
             react_max_iterations=data.get("react_max_iterations", REACT_MAX_ITERATIONS),
             react_safety_timeout=data.get("react_safety_timeout", REACT_SAFETY_TIMEOUT),
             ui_port=data.get("ui_port", DEFAULT_UI_PORT),
