@@ -35,11 +35,13 @@ class MCPHub:
         self.config = config
         self.db_manager = db_manager
         self.manager = MCPManager(config, db_manager)
-        
+        self._initialized = False
+
     async def initialize(self) -> None:
         """Initialize MCP hub."""
         await self.manager.initialize()
         await self.manager.connect_default_servers()
+        self._initialized = True
     
     async def shutdown(self) -> None:
         """Shutdown MCP hub."""

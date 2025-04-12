@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS chat_history (
     user_message TEXT NOT NULL,
     assistant_message TEXT NOT NULL,
     cluster_id INTEGER,
+    metadata TEXT,  -- JSON string for storing additional metadata
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
 );

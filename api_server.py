@@ -137,6 +137,7 @@ async def run_server(
         
         # Initialize MCP hub
         mcp_hub = MCPHub(config, db_manager)
+        await mcp_hub.initialize()
         logger.info("MCP hub initialized.")
         
         # Initialize LLM factory

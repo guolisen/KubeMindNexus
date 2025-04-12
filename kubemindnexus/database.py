@@ -642,6 +642,7 @@ class DatabaseManager:
         user_message: str,
         assistant_message: str,
         cluster_id: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> int:
         """Add a chat message.
         
@@ -649,18 +650,22 @@ class DatabaseManager:
             user_message: User message.
             assistant_message: Assistant message.
             cluster_id: Optional cluster ID.
+            metadata: Optional metadata as a dictionary.
             
         Returns:
             Chat ID.
         """
         try:
+            # Serialize metadata to JSON if provided
+            metadata_json = json.dumps(metadata) if metadata else None
+            
             cursor = self.conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO chat_history (user_message, assistant_message, cluster_id)
-                VALUES (?, ?, ?)
+                INSERT INTO chat_history (user_message, assistant_message, cluster_id, metadata)
+                VALUES (?, ?, ?, ?)
                 """,
-                (user_message, assistant_message, cluster_id),
+                (user_message, assistant_message, cluster_id, metadata_json),
             )
             self.conn.commit()
             
@@ -705,8 +710,23 @@ class DatabaseManager:
                     """,
                     (limit,),
                 )
+            
+            chat_messages = []
+            for row in cursor.fetchall():
+                message = dict(row)
                 
-            return [dict(row) for row in cursor.fetchall()]
+                # Deserialize metadata from JSON if it exists
+                if message.get("metadata"):
+                    try:
+                        message["metadata"] = json.loads(message["metadata"])
+                    except (json.JSONDecodeError, TypeError):
+                        message["metadata"] = {}
+                else:
+                    message["metadata"] = {}
+                    
+                chat_messages.append(message)
+                
+            return chat_messages
             
         except Exception as e:
             logger.error(f"Error getting chat history: {str(e)}")
