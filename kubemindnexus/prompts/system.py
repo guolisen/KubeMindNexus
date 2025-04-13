@@ -15,43 +15,6 @@ def get_introduction() -> str:
 ===="""
 
 
-def get_tool_usage_guidance() -> str:
-    """Get the tool usage section of the system prompt."""
-    return """
-TOOL USAGE GUIDELINES
-
-GENERAL GUIDELINES:
-1. Choose the appropriate tool based on the user's question
-2. If no tool is needed, reply directly
-3. Use only the tools explicitly defined above
-
-<<< STRICT REQUIREMENTS FOR TOOL CALLS >>>
-When you need to use a tool, you MUST:
-- Respond ONLY with the exact JSON object format below
-- Absolutely NO additional text, explanations, or formatting
-- NEVER include reasoning or thought process
-- If the request is invalid, return: {}
-
-Tool use is formatted using structured JSON. Provide a JSON object with the tool name and parameters:
-
-{
-  "tool": "tool_name",
-  "parameters": {
-    "param1": "value1",
-    "param2": "value2"
-  }
-}
-
-<< MUST IMPORTANT NOTICE >>:
-When calling MCP tools, you MUST strictly follow these rules:
-    - Return ONLY a valid JSON object formatted as a tool call request
-    - Absolutely NO explanations, comments, or extra text
-    - Do NOT include any reasoning or thought process
-    - If the request doesn't match tool specifications, return an empty object {}
-
-"""
-
-
 def get_react_loop_guidance() -> str:
     """Get the ReAct loop guidance section of the system prompt."""
     return """
@@ -168,7 +131,7 @@ When calling MCP tools, you MUST strictly follow these rules:
 Format longer YAML examples or command outputs in code blocks for readability.
 """
 
-def get_response_test() -> str:
+def get_tool_usage_guidance() -> str:
     """Get test for response formatting."""
     return """
 \n\n
@@ -227,23 +190,22 @@ def generate_system_prompt(
     
     # Add cluster context if provided
     #if cluster_context:
-    #    prompt_parts.append(f"CURRENT CLUSTER CONTEXT\n\n{cluster_context}")
+    prompt_parts.append(f"CURRENT CLUSTER CONTEXT\n\n{cluster_context}")
     
     # Add optional sections
-    #if include_react_guidance:
-    #    prompt_parts.append(get_react_loop_guidance())
+    if include_react_guidance:
+        prompt_parts.append(get_react_loop_guidance())
     
-    #if include_mcp_guidance:
-    #prompt_parts.append(get_mcp_integration_guidance())
+    if include_mcp_guidance:
+        prompt_parts.append(get_mcp_integration_guidance())
     
     # Add Kubernetes guidance and response guidelines
-    #prompt_parts.append(get_kubernetes_guidance())
+    prompt_parts.append(get_kubernetes_guidance())
     #prompt_parts.append(get_response_guidelines())
-    
-        # Add tool usage guidance
-    #prompt_parts.append(get_tool_usage_guidance())
+    prompt_parts.append("\n=============\n")
+    # Add tool usage guidance
     prompt_parts.append("AVAILABLE TOOLS:\n" + available_tools)
-    prompt_parts.append(get_response_test())
+    prompt_parts.append(get_tool_usage_guidance())
 
     # Combine all sections
     return "\n\n".join(prompt_parts)

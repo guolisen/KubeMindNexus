@@ -222,8 +222,8 @@ class ReactLoop:
                     
                     tool_messages.append({
                         "role": "user",
-                        "content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
-                        #"content": str(tool_result)
+                        #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
+                        "content": str(tool_result)
                     })
                     
                     # Continue to next iteration
