@@ -662,7 +662,7 @@ async def chat(
         # Process the message through the ReAct loop
         response, chat_id = await react_loop.run(
             user_message=chat_message.message,
-            conversation_history=conversation_history,
+            conversation_history=None,
             current_cluster=current_cluster,
         )
         

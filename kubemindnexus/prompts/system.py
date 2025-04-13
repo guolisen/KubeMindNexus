@@ -20,18 +20,20 @@ def get_tool_usage_guidance() -> str:
     return """
 TOOL USAGE GUIDELINES
 
-You have access to a set of tools that are executed upon the user's request. You can use tools to gather information, manage Kubernetes resources, and interact with clusters. Tools are used one at a time, and you receive the result of each tool use before deciding on the next step.
+GENERAL GUIDELINES:
+1. Choose the appropriate tool based on the user's question
+2. If no tool is needed, reply directly
+3. Use only the tools explicitly defined above
 
-When using tools:
-1. Think about what information you need or what action to perform
-2. Choose the most appropriate tool for the task
-3. Format the tool request properly
-4. Wait for the result and analyze it
-5. Determine the next step based on the result
+<<< STRICT REQUIREMENTS FOR TOOL CALLS >>>
+When you need to use a tool, you MUST:
+- Respond ONLY with the exact JSON object format below
+- Absolutely NO additional text, explanations, or formatting
+- NEVER include reasoning or thought process
+- If the request is invalid, return: {}
 
 Tool use is formatted using structured JSON. Provide a JSON object with the tool name and parameters:
 
-```json
 {
   "tool": "tool_name",
   "parameters": {
@@ -39,9 +41,14 @@ Tool use is formatted using structured JSON. Provide a JSON object with the tool
     "param2": "value2"
   }
 }
-```
 
-Always analyze the response you receive from tools before proceeding to ensure you correctly interpret the information or results.
+<< MUST IMPORTANT NOTICE >>:
+When calling MCP tools, you MUST strictly follow these rules:
+    - Return ONLY a valid JSON object formatted as a tool call request
+    - Absolutely NO explanations, comments, or extra text
+    - Do NOT include any reasoning or thought process
+    - If the request doesn't match tool specifications, return an empty object {}
+
 """
 
 
@@ -152,9 +159,50 @@ When responding to users:
 5. Highlight potential issues or considerations for production environments
 6. If there are multiple approaches, briefly explain the tradeoffs
 
+<< MUST IMPORTANT NOTICE >>:
+When calling MCP tools, you MUST strictly follow these rules:
+    - Return ONLY a valid JSON object formatted as a tool call request
+    - Absolutely NO explanations, comments, or extra text
+    - Do NOT include any reasoning or thought process
+
 Format longer YAML examples or command outputs in code blocks for readability.
 """
 
+def get_response_test() -> str:
+    """Get test for response formatting."""
+    return """
+\n\n
+==========
+
+Choose the appropriate tool based on the user's question.
+IMPORTANT: When you need to use a tool, you must ONLY respond with
+the exact JSON object format below, nothing else:\n
+
+{
+  "server": "server_name",
+  "tool": "tool_name",
+  "parameters": {
+    "param1": "value1",
+    "param2": "value2"
+  }
+}
+
+After receiving a tool's response:\n
+0. If no tool is needed, reply final message according to giving message informations directly.
+1. Transform the raw data into a natural, conversational response\n
+2. Keep responses concise but informative\n
+3. Focus on the most relevant information\n
+4. Use appropriate context from the user's question\n
+5. Avoid simply repeating the raw data\n\n
+Please use only the tools that are explicitly defined above.
+<< MUST IMPORTANT NOTICE >>:
+When calling MCP tools, you MUST strictly follow these rules:
+    - Return ONLY a valid JSON object formatted as a tool call request
+    - Absolutely NO explanations, comments, or extra text
+    - Do NOT include any reasoning or thought process
+    - Do NOT respond with Markdown format, rermove any "```json" and "```" tags
+    - Do NOT respond with any other text, just the JSON object\n\n
+"""
 
 def generate_system_prompt(
     available_tools: str,
@@ -176,27 +224,26 @@ def generate_system_prompt(
     # Start with introduction
     prompt_parts = [get_introduction()]
     
-    # Add tool usage guidance
-    prompt_parts.append(get_tool_usage_guidance())
-    
-    # Add available tools section
-    prompt_parts.append("AVAILABLE TOOLS\n\n" + available_tools)
-    
     # Add cluster context if provided
-    if cluster_context:
-        prompt_parts.append(f"CURRENT CLUSTER CONTEXT\n\n{cluster_context}")
+    #if cluster_context:
+    #    prompt_parts.append(f"CURRENT CLUSTER CONTEXT\n\n{cluster_context}")
     
     # Add optional sections
-    if include_react_guidance:
-        prompt_parts.append(get_react_loop_guidance())
+    #if include_react_guidance:
+    #    prompt_parts.append(get_react_loop_guidance())
     
-    if include_mcp_guidance:
-        prompt_parts.append(get_mcp_integration_guidance())
+    #if include_mcp_guidance:
+    #prompt_parts.append(get_mcp_integration_guidance())
     
     # Add Kubernetes guidance and response guidelines
-    prompt_parts.append(get_kubernetes_guidance())
-    prompt_parts.append(get_response_guidelines())
+    #prompt_parts.append(get_kubernetes_guidance())
+    #prompt_parts.append(get_response_guidelines())
     
+        # Add tool usage guidance
+    #prompt_parts.append(get_tool_usage_guidance())
+    prompt_parts.append("AVAILABLE TOOLS:\n" + available_tools)
+    prompt_parts.append(get_response_test())
+
     # Combine all sections
     return "\n\n".join(prompt_parts)
 
@@ -206,8 +253,8 @@ def generate_tool_format(
 ) -> str:
     """Generate a formatted description of tools grouped by server.
     
-    This function provides an enhanced formatting of tools compared to
-    the basic formatting in MCPHub.
+    This function follows a simple format inspired by the Python SDK example,
+    focusing on tool names, descriptions, and parameters.
     
     Args:
         tools_by_server: Dictionary mapping server names to lists of tools.
@@ -235,50 +282,19 @@ def generate_tool_format(
             required = input_schema.get("required", [])
             
             for param_name, param_info in properties.items():
-                param_type = param_info.get("type", "any")
-                param_desc = param_info.get("description", "")
+                param_desc = param_info.get("description", "No description")
                 is_required = param_name in required
-                req_marker = " (required)" if is_required else " (optional)"
+                req_marker = " (required)" if is_required else ""
                 
-                input_params.append(f"  - {param_name}: {param_type}{req_marker} - {param_desc}")
+                input_params.append(f"- {param_name}: {param_desc}{req_marker}")
             
             # Format tool description
-            tool_desc = [f"Tool: {name}"]
+            tool_desc = [f"\nTool: {name}"]
             tool_desc.append(f"Description: {description}")
             
             if input_params:
-                tool_desc.append("Parameters:")
+                tool_desc.append("Arguments:")
                 tool_desc.extend(input_params)
-                
-            # Add example usage if possible
-            if properties and name:
-                example = {
-                    "tool": name,
-                    "parameters": {}
-                }
-                
-                # Create example parameters using basic type defaults
-                for param_name, param_info in properties.items():
-                    if param_name in required:
-                        param_type = param_info.get("type", "string")
-                        
-                        if param_type == "string":
-                            example["parameters"][param_name] = f"<{param_name}>"
-                        elif param_type == "number" or param_type == "integer":
-                            example["parameters"][param_name] = 0
-                        elif param_type == "boolean":
-                            example["parameters"][param_name] = False
-                        elif param_type == "array":
-                            example["parameters"][param_name] = []
-                        elif param_type == "object":
-                            example["parameters"][param_name] = {}
-                
-                tool_desc.append("Example:")
-                tool_desc.append("```json")
-                # Format JSON with indentation for readability
-                import json
-                tool_desc.append(json.dumps(example, indent=2))
-                tool_desc.append("```")
             
             tool_descriptions.append("\n".join(tool_desc))
         

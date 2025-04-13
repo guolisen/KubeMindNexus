@@ -4,7 +4,7 @@ This module provides an enhanced ReAct (Reasoning + Acting) loop implementation
 that supports modular system prompts, better context management, and improved
 error handling.
 """
-
+import re
 import asyncio
 import json
 import logging
@@ -126,7 +126,7 @@ class ReactLoop:
                     include_mcp_guidance=include_mcp_guidance,
                     include_react_guidance=include_react_guidance
                 )
-                logger.info("Using enhanced modular system prompt")
+                logger.info("Using enhanced modular system prompt {}".format(system_prompt))
             except Exception as e:
                 # Fall back to the legacy template if there's an error
                 logger.warning(f"Error generating enhanced system prompt, falling back to legacy: {str(e)}")
@@ -160,6 +160,7 @@ class ReactLoop:
         while iteration < self.max_iterations:
             # Check timeout with more detailed logging
             elapsed_time = time.time() - start_time
+            '''
             if elapsed_time > self.safety_timeout:
                 logger.warning(f"ReAct loop timed out after {elapsed_time:.2f}s (limit: {self.safety_timeout}s)")
                 final_response = (
@@ -168,7 +169,7 @@ class ReactLoop:
                     "or break your request into smaller steps."
                 )
                 break
-                
+            '''
             iteration += 1
             logger.info(f"ReAct iteration {iteration}")
             
@@ -176,54 +177,65 @@ class ReactLoop:
             current_messages = messages + tool_messages
             
             # Generate response with tools
-            response_text, tool_calls = await self.llm.generate_with_tools(
-                current_messages, tools, system_prompt
+            response_text, _ = await self.llm.generate(
+                current_messages, system_prompt
             )
             
-            # If no tool calls, we have our final response
-            if not tool_calls:
+            # Check if response_text is a JSON MCP tool call
+            try:
+                pattern = r'```json([\s\S]*?)```'
+                match = re.search(pattern, response_text)
+
+                if match:
+                    response_text = match.group(1).strip()
+                    print(response_text)
+
+                tool_call = json.loads(response_text)
+                if isinstance(tool_call, dict) and "tool" in tool_call and "parameters" in tool_call:
+                    # This is an MCP tool call
+                    tool_name = tool_call["tool"]
+                    tool_args = tool_call["parameters"]
+                    
+                    logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
+                    
+                    # Find the server for this tool
+                    server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
+                    
+                    if not server_name:
+                        tool_result = f"Error: Tool {tool_name} not found in any available server."
+                        logger.error(tool_result)
+                    else:
+                        # Execute the tool
+                        success, tool_result = await self.mcp_hub.execute_tool(
+                            server_name, tool_name, tool_args, chat_id
+                        )
+                        
+                        if not success:
+                            tool_result = f"Error executing tool {tool_name}: {tool_result}"
+                            logger.error(tool_result)
+                    
+                    # Add tool result to messages for context
+                    #tool_messages.append(LLMMessage(
+                    #    role=MessageRole.ASSISTANT,
+                    #    content=response_text
+                    #))
+                    
+                    tool_messages.append(LLMMessage(
+                        role=MessageRole.SYSTEM,
+                        #content=str("Call Tool {tool_name} result: " + tool_result + "\n")
+                        content=str("Useful information please refer to: " + tool_result)
+                    ))
+                    
+                    # Continue to next iteration
+                    continue
+                else:
+                    # Not a tool call, just a regular response
+                    final_response = response_text
+                    break
+            except json.JSONDecodeError:
+                # Not JSON, just a regular response
                 final_response = response_text
                 break
-                
-            # Process tool calls
-            for tool_call in tool_calls:
-                # Extract tool information
-                tool_id = tool_call.get("id", "")
-                function_data = tool_call.get("function", {})
-                tool_name = function_data.get("name", "")
-                tool_args = function_data.get("arguments", {})
-                
-                logger.info(f"Executing tool: {tool_name} with args: {tool_args}")
-                
-                # Find the server for this tool
-                server_name = self.mcp_hub.find_server_for_tool(tool_name)
-                
-                if not server_name:
-                    tool_result = f"Error: Tool {tool_name} not found in any available server."
-                    logger.error(tool_result)
-                else:
-                    # Execute the tool
-                    success, tool_result = await self.mcp_hub.execute_tool(
-                        server_name, tool_name, tool_args, chat_id
-                    )
-                    
-                    if not success:
-                        tool_result = f"Error executing tool {tool_name}: {tool_result}"
-                        logger.error(tool_result)
-                
-                # Add tool result to messages
-                tool_messages.append(LLMMessage(
-                    role=MessageRole.ASSISTANT,
-                    content="",
-                    tool_calls=[tool_call]
-                ))
-                
-                tool_messages.append(LLMMessage(
-                    role=MessageRole.TOOL,
-                    content=str(tool_result),
-                    name=tool_name,
-                    tool_call_id=tool_id
-                ))
             
             # If we've reached the max iterations, generate a final response
             if iteration == self.max_iterations:
