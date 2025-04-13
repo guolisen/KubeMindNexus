@@ -232,8 +232,9 @@ class ReactLoop:
                     # Not a tool call, just a regular response
                     final_response = response_text
                     break
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 # Not JSON, just a regular response
+                logger.info(f"Response is not a JSON tool call: {str(e)}")
                 final_response = response_text
                 break
             

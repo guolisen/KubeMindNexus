@@ -137,7 +137,9 @@ def get_tool_usage_guidance() -> str:
 \n\n
 ==========
 
-Choose the appropriate tool based on the user's question. If no tool is needed, reply directly.
+Choose the appropriate tool based on the user's question. 
+    - If no tool is needed, reply directly.
+    - If cannot find the parameters from current context, ask user for more information. 
 IMPORTANT: When you need to use a tool, you must ONLY respond with
 the exact JSON object format below, nothing else:\n
 
