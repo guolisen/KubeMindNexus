@@ -9,7 +9,7 @@ import openai
 from openai import OpenAI
 
 from ..constants import LLMProvider
-from .base import BaseLLM, LLMMessage, MessageRole
+from .base import BaseLLM, MessageRole
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class OpenAILLM(BaseLLM):
             raise
     
     async def generate(
-        self, messages: List[LLMMessage], system_prompt: Optional[str] = None
+        self, messages: List[Dict[str, Any]], system_prompt: Optional[str] = None
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """Generate a response from the OpenAI LLM.
         
@@ -61,7 +61,7 @@ class OpenAILLM(BaseLLM):
             Tuple of (response_text, tool_calls) where tool_calls is a list of tool calls
             that were extracted from the response.
         """
-        # Convert messages to OpenAI format
+        # Prepare messages for OpenAI format
         openai_messages = []
         
         # Add system prompt if provided
@@ -71,22 +71,8 @@ class OpenAILLM(BaseLLM):
                 "content": system_prompt,
             })
         
-        # Add conversation messages
-        for message in messages:
-            openai_message = {
-                "role": message.role.value,
-                "content": message.content,
-            }
-            
-            # Add name if provided (for 'tool' role)
-            if message.name:
-                openai_message["name"] = message.name
-                
-            # Add tool call ID if provided (for tool outputs)
-            if message.tool_call_id:
-                openai_message["tool_call_id"] = message.tool_call_id
-                
-            openai_messages.append(openai_message)
+        # Add conversation messages (already in dictionary format)
+        openai_messages.extend(messages)
         
         # Generate response
         try:
@@ -94,6 +80,7 @@ class OpenAILLM(BaseLLM):
             params = {
                 "model": self.model,
                 "messages": openai_messages,
+                "stream": False,
                 **self.parameters,
             }
             
@@ -142,7 +129,7 @@ class OpenAILLM(BaseLLM):
     
     async def generate_with_tools(
         self,
-        messages: List[LLMMessage],
+        messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
         system_prompt: Optional[str] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
@@ -157,7 +144,7 @@ class OpenAILLM(BaseLLM):
             Tuple of (response_text, tool_calls) where tool_calls is a list of tool calls
             that were extracted from the response.
         """
-        # Convert messages to OpenAI format
+        # Prepare messages for OpenAI format
         openai_messages = []
         
         # Add system prompt if provided
@@ -167,22 +154,8 @@ class OpenAILLM(BaseLLM):
                 "content": system_prompt,
             })
         
-        # Add conversation messages
-        for message in messages:
-            openai_message = {
-                "role": message.role.value,
-                "content": message.content,
-            }
-            
-            # Add name if provided (for 'tool' role)
-            if message.name:
-                openai_message["name"] = message.name
-                
-            # Add tool call ID if provided (for tool outputs)
-            if message.tool_call_id:
-                openai_message["tool_call_id"] = message.tool_call_id
-                
-            openai_messages.append(openai_message)
+        # Add conversation messages (already in dictionary format)
+        openai_messages.extend(messages)
         
         # Generate response
         try:

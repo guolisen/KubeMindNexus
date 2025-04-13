@@ -174,7 +174,7 @@ def get_response_test() -> str:
 \n\n
 ==========
 
-Choose the appropriate tool based on the user's question.
+Choose the appropriate tool based on the user's question. If no tool is needed, reply directly.
 IMPORTANT: When you need to use a tool, you must ONLY respond with
 the exact JSON object format below, nothing else:\n
 
@@ -187,20 +187,21 @@ the exact JSON object format below, nothing else:\n
   }
 }
 
-After receiving a tool's response:\n
-0. If no tool is needed, reply final message according to giving message informations directly.
+*<< IMPORTANT AFTER RECEIVING A TOOL'S RESPONSE >>*:\n
+When you receive a tool's response, follow these steps:\n
 1. Transform the raw data into a natural, conversational response\n
 2. Keep responses concise but informative\n
 3. Focus on the most relevant information\n
 4. Use appropriate context from the user's question\n
-5. Avoid simply repeating the raw data\n\n
-Please use only the tools that are explicitly defined above.
-<< MUST IMPORTANT NOTICE >>:
+5. Avoid simply repeating the raw data\n
+6. If no need to call tools, summerize all of message and give the final response according to user's query\n
+
+*<<TOOL USAGE GUIDELINES>>*
+*<< MUST IMPORTANT NOTICE >>*:
 When calling MCP tools, you MUST strictly follow these rules:
     - Return ONLY a valid JSON object formatted as a tool call request
     - Absolutely NO explanations, comments, or extra text
     - Do NOT include any reasoning or thought process
-    - Do NOT respond with Markdown format, rermove any "```json" and "```" tags
     - Do NOT respond with any other text, just the JSON object\n\n
 """
 

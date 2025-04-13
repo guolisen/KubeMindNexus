@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import httpx
 
 from ..constants import LLMProvider
-from .base import BaseLLM, LLMMessage, MessageRole
+from .base import BaseLLM, MessageRole
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class OllamaLLM(BaseLLM):
         logger.info(f"Initialized Ollama client with model: {model}, base_url: {self.base_url}")
     
     async def _convert_messages_to_prompt(
-        self, messages: List[LLMMessage], system_prompt: Optional[str] = None
+        self, messages: List[Dict[str, Any]], system_prompt: Optional[str] = None
     ) -> str:
         """Convert messages to a prompt format that Ollama can understand.
         
@@ -61,16 +61,19 @@ class OllamaLLM(BaseLLM):
         
         # Add conversation messages
         for message in messages:
-            if message.role == MessageRole.SYSTEM:
-                parts.append(f"<system>\n{message.content}\n</system>\n\n")
-            elif message.role == MessageRole.USER:
-                parts.append(f"<user>\n{message.content}\n</user>\n\n")
-            elif message.role == MessageRole.ASSISTANT:
-                parts.append(f"<assistant>\n{message.content}\n</assistant>\n\n")
-            elif message.role == MessageRole.TOOL:
+            role = message.get("role", "")
+            content = message.get("content", "")
+            
+            if role == MessageRole.SYSTEM:
+                parts.append(f"<system>\n{content}\n</system>\n\n")
+            elif role == MessageRole.USER:
+                parts.append(f"<user>\n{content}\n</user>\n\n")
+            elif role == MessageRole.ASSISTANT:
+                parts.append(f"<assistant>\n{content}\n</assistant>\n\n")
+            elif role == MessageRole.TOOL:
                 # For tool messages, include the name if available
-                name = message.name or "tool"
-                parts.append(f"<{name}>\n{message.content}\n</{name}>\n\n")
+                name = message.get("name", "tool") 
+                parts.append(f"<{name}>\n{content}\n</{name}>\n\n")
         
         # Add assistant prompt
         parts.append("<assistant>\n")
@@ -78,7 +81,7 @@ class OllamaLLM(BaseLLM):
         return "".join(parts)
     
     async def generate(
-        self, messages: List[LLMMessage], system_prompt: Optional[str] = None
+        self, messages: List[Dict[str, Any]], system_prompt: Optional[str] = None
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """Generate a response from the Ollama LLM.
         
@@ -123,7 +126,7 @@ class OllamaLLM(BaseLLM):
     
     async def generate_with_tools(
         self,
-        messages: List[LLMMessage],
+        messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
         system_prompt: Optional[str] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:

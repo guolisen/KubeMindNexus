@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import httpx
 
 from ..constants import LLMProvider
-from .base import BaseLLM, LLMMessage, MessageRole
+from .base import BaseLLM, MessageRole
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class OpenRouterLLM(BaseLLM):
         logger.info(f"Initialized OpenRouter client with model: {model}")
     
     async def generate(
-        self, messages: List[LLMMessage], system_prompt: Optional[str] = None
+        self, messages: List[Dict[str, Any]], system_prompt: Optional[str] = None
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """Generate a response from the OpenRouter LLM.
         
@@ -62,7 +62,7 @@ class OpenRouterLLM(BaseLLM):
             Tuple of (response_text, tool_calls) where tool_calls is a list of tool calls
             that were extracted from the response.
         """
-        # Convert messages to OpenRouter format (compatible with OpenAI)
+        # Prepare messages for OpenRouter format (compatible with OpenAI)
         api_messages = []
         
         # Add system prompt if provided
@@ -72,22 +72,8 @@ class OpenRouterLLM(BaseLLM):
                 "content": system_prompt,
             })
         
-        # Add conversation messages
-        for message in messages:
-            api_message = {
-                "role": message.role.value,
-                "content": message.content,
-            }
-            
-            # Add name if provided (for 'tool' role)
-            if message.name:
-                api_message["name"] = message.name
-                
-            # Add tool call ID if provided (for tool outputs)
-            if message.tool_call_id:
-                api_message["tool_call_id"] = message.tool_call_id
-                
-            api_messages.append(api_message)
+        # Add conversation messages (already in dictionary format)
+        api_messages.extend(messages)
         
         # Generate response
         try:
@@ -144,7 +130,7 @@ class OpenRouterLLM(BaseLLM):
     
     async def generate_with_tools(
         self,
-        messages: List[LLMMessage],
+        messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
         system_prompt: Optional[str] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
@@ -159,7 +145,7 @@ class OpenRouterLLM(BaseLLM):
             Tuple of (response_text, tool_calls) where tool_calls is a list of tool calls
             that were extracted from the response.
         """
-        # Convert messages to OpenRouter format (compatible with OpenAI)
+        # Prepare messages for OpenRouter format (compatible with OpenAI)
         api_messages = []
         
         # Add system prompt if provided
@@ -169,22 +155,8 @@ class OpenRouterLLM(BaseLLM):
                 "content": system_prompt,
             })
         
-        # Add conversation messages
-        for message in messages:
-            api_message = {
-                "role": message.role.value,
-                "content": message.content,
-            }
-            
-            # Add name if provided (for 'tool' role)
-            if message.name:
-                api_message["name"] = message.name
-                
-            # Add tool call ID if provided (for tool outputs)
-            if message.tool_call_id:
-                api_message["tool_call_id"] = message.tool_call_id
-                
-            api_messages.append(api_message)
+        # Add conversation messages (already in dictionary format)
+        api_messages.extend(messages)
         
         # Convert tools to OpenRouter format (compatible with OpenAI)
         api_tools = []

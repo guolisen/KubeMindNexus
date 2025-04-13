@@ -16,7 +16,7 @@ from ..constants import REACT_MAX_ITERATIONS, REACT_SAFETY_TIMEOUT
 from ..database import DatabaseManager
 from ..mcp.hub import MCPHub
 from ..prompts.system import generate_system_prompt, generate_tool_format
-from .base import BaseLLM, LLMMessage, MessageRole
+from .base import BaseLLM, MessageRole
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +72,14 @@ class ReactLoop:
         if conversation_history is None:
             conversation_history = []
             
-        # Convert conversation history to LLM messages
-        messages: List[LLMMessage] = []
+        # Convert conversation history to messages
+        messages: List[Dict[str, Any]] = []
         for user_msg, assistant_msg in conversation_history:
-            messages.append(LLMMessage(role=MessageRole.USER, content=user_msg))
-            messages.append(LLMMessage(role=MessageRole.ASSISTANT, content=assistant_msg))
+            messages.append({"role": "user", "content": user_msg})
+            messages.append({"role": "assistant", "content": assistant_msg})
             
         # Add the current user message
-        messages.append(LLMMessage(role=MessageRole.USER, content=user_message))
+        messages.append({"role": "user", "content": user_message})
         
         # Get available tools
         all_tools = self.mcp_hub.get_all_available_tools()
@@ -154,7 +154,7 @@ class ReactLoop:
         
         # Run the ReAct loop
         iteration = 0
-        tool_messages: List[LLMMessage] = []
+        tool_messages: List[Dict[str, Any]] = []
         final_response = "I encountered an error processing your request."
         
         while iteration < self.max_iterations:
@@ -215,16 +215,16 @@ class ReactLoop:
                             logger.error(tool_result)
                     
                     # Add tool result to messages for context
-                    #tool_messages.append(LLMMessage(
-                    #    role=MessageRole.ASSISTANT,
-                    #    content=response_text
-                    #))
+                    tool_messages.append({
+                        "role": "assistant",
+                        "content": response_text
+                    })
                     
-                    tool_messages.append(LLMMessage(
-                        role=MessageRole.SYSTEM,
-                        #content=str("Call Tool {tool_name} result: " + tool_result + "\n")
-                        content=str("Useful information please refer to: " + tool_result)
-                    ))
+                    tool_messages.append({
+                        "role": "user",
+                        "content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
+                        #"content": str(tool_result)
+                    })
                     
                     # Continue to next iteration
                     continue
@@ -243,10 +243,10 @@ class ReactLoop:
                 final_messages = messages + tool_messages
                 
                 # Add a prompt to summarize
-                final_messages.append(LLMMessage(
-                    role=MessageRole.USER,
-                    content="Please provide a final response based on the tool results above."
-                ))
+                final_messages.append({
+                    "role": "user",
+                    "content": "Please provide a final response based on the tool results above."
+                })
                 
                 # Generate final response (no tools this time)
                 final_response, _ = await self.llm.generate(final_messages, system_prompt)

@@ -2,7 +2,6 @@
 
 import abc
 import logging
-from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -18,17 +17,6 @@ class MessageRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
     TOOL = "tool"
-
-
-@dataclass
-class LLMMessage:
-    """Message for LLM APIs."""
-    
-    role: MessageRole
-    content: str
-    name: Optional[str] = None
-    tool_calls: Optional[List[Dict[str, Any]]] = None
-    tool_call_id: Optional[str] = None
 
 
 class BaseLLM(abc.ABC):
@@ -59,7 +47,7 @@ class BaseLLM(abc.ABC):
     
     @abc.abstractmethod
     async def generate(
-        self, messages: List[LLMMessage], system_prompt: Optional[str] = None
+        self, messages: List[Dict[str, Any]], system_prompt: Optional[str] = None
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """Generate a response from the LLM.
         
@@ -76,7 +64,7 @@ class BaseLLM(abc.ABC):
     @abc.abstractmethod
     async def generate_with_tools(
         self,
-        messages: List[LLMMessage],
+        messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
         system_prompt: Optional[str] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
