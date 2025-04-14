@@ -148,7 +148,8 @@ the exact JSON object format below, nothing else:\n
   "tool": "tool_name",
   "parameters": {
     "param1": "value1",
-    "param2": "value2"
+    "param2": "value2",
+    "param3": "",
   }
 }
 
@@ -168,6 +169,7 @@ When calling MCP tools, you MUST strictly follow these rules:
     - Absolutely NO explanations, comments, or extra text
     - Do NOT include any reasoning or thought process
     - Do NOT respond with any other text, just the JSON object\n\n
+    - If you want to return none property in JSON, just return "", Do NOT use 'None'
 """
 
 def generate_system_prompt(

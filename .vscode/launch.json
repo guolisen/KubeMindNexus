@@ -13,7 +13,7 @@
             "justMyCode": false,
             "args": [
                 "--config",
-                "/home/lewis/mcp/KubeMindNexus/kubemindnexus/config/default_config.json",
+                "/root/code/KubeMindNexus/kubemindnexus/config/default_config.json",
                 "--mode",
                 "api"
             ]

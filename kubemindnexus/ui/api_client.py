@@ -29,7 +29,7 @@ class ApiClient:
             The HTTP client.
         """
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
+            self._client = httpx.AsyncClient(base_url=self.base_url, timeout=120.0)
         return self._client
     
     async def close(self):
