@@ -456,7 +456,7 @@ class StreamlitApp:
                     
                     # Display and manage cluster MCP servers
                     with st.expander("Cluster MCP Servers", expanded=True):
-                        server_tabs = st.tabs(["Current Servers", "Add Server"])
+                        server_tabs = st.tabs(["Current Servers", "Add Server", "Available Tools"])
                         
                         with server_tabs[0]:  # Current Servers tab
                             if not servers:
@@ -611,6 +611,71 @@ class StreamlitApp:
                                                 
                                             except Exception as e:
                                                 st.error(f"Failed to add server: {str(e)}")
+                                                
+                        with server_tabs[2]:  # Available Tools tab
+                            if not servers:
+                                st.info("No MCP servers associated with this cluster.")
+                            else:
+                                # Select a server from this cluster to view tools
+                                server_id = st.selectbox(
+                                    "Select server to view tools",
+                                    options=[(s["id"], s["name"]) for s in servers],
+                                    format_func=lambda x: f"{x[1]} (ID: {x[0]})",
+                                    key=f"cluster_tools_server_select_{selected_id}"
+                                )
+                                
+                                if server_id:
+                                    selected_server_id, selected_server_name = server_id
+                                    
+                                    # Get server status
+                                    server_status = AsyncToSync.run(
+                                        self.api_client.get_mcp_server_status(selected_server_id)
+                                    )
+                                    is_connected = server_status["is_connected"] if server_status else False
+                                    
+                                    if not is_connected:
+                                        st.warning(f"Server '{selected_server_name}' is not connected. Connect to the server to view available tools.")
+                                        
+                                        if st.button("Connect Server", key=f"cluster_tools_connect_server_{selected_server_id}"):
+                                            success = AsyncToSync.run(
+                                                self.api_client.connect_mcp_server(selected_server_id)
+                                            )
+                                            if success:
+                                                st.success(f"Connected to server {selected_server_name}")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"Failed to connect to server {selected_server_name}")
+                                    else:
+                                        # Fetch tools and resources
+                                        cluster_tools_tabs = st.tabs(["Tools", "Resources"])
+                                        
+                                        with cluster_tools_tabs[0]:  # Tools tab
+                                            with st.spinner("Loading tools..."):
+                                                tools = AsyncToSync.run(
+                                                    self.api_client.get_mcp_server_tools(selected_server_id)
+                                                )
+                                                
+                                                if tools:
+                                                    for tool in tools:
+                                                        st.markdown(f"**Tool: {tool.get('name', 'Unknown')}**")
+                                                        st.json(tool)
+                                                        st.divider()
+                                                else:
+                                                    st.info(f"No tools available for server '{selected_server_name}'")
+                                        
+                                        with cluster_tools_tabs[1]:  # Resources tab
+                                            with st.spinner("Loading resources..."):
+                                                resources = AsyncToSync.run(
+                                                    self.api_client.get_mcp_server_resources(selected_server_id)
+                                                )
+                                                
+                                                if resources:
+                                                    for resource in resources:
+                                                        st.markdown(f"**Resource: {resource.get('uri', 'Unknown')}**")
+                                                        st.json(resource)
+                                                        st.divider()
+                                                else:
+                                                    st.info(f"No resources available for server '{selected_server_name}'")
                     
                     # Cluster deletion
                     with st.expander("Danger Zone", expanded=False):
@@ -1126,8 +1191,9 @@ class StreamlitApp:
                                 
                                 if tools:
                                     for tool in tools:
-                                        with st.expander(f"Tool: {tool.get('name', 'Unknown')}"):
-                                            st.json(tool)
+                                        st.markdown(f"**Tool: {tool.get('name', 'Unknown')}**")
+                                        st.json(tool)
+                                        st.divider()
                                 else:
                                     st.info(f"No tools available for server '{selected_name}'")
                         
@@ -1139,8 +1205,9 @@ class StreamlitApp:
                                 
                                 if resources:
                                     for resource in resources:
-                                        with st.expander(f"Resource: {resource.get('uri', 'Unknown')}"):
-                                            st.json(resource)
+                                        st.markdown(f"**Resource: {resource.get('uri', 'Unknown')}**")
+                                        st.json(resource)
+                                        st.divider()
                                 else:
                                     st.info(f"No resources available for server '{selected_name}'")
 
