@@ -144,14 +144,18 @@ IMPORTANT: When you need to use a tool, you must ONLY respond with
 the exact JSON object format below, nothing else:\n
 
 {
-  "server": "server_name",
-  "tool": "tool_name",
+  "server": "server_name",  // Must include the exact server name from the tool description
+  "tool": "tool_name",      // Must be the exact tool name from the description
   "parameters": {
     "param1": "value1",
     "param2": "value2",
     "param3": "",
   }
 }
+
+Note that the server name is critical - it must be the exact server name 
+from either the ACTIVE CLUSTER section or LOCAL TOOLS section of the available tools.
+This ensures the API server can correctly route your request to the appropriate MCP server.
 
 *<< IMPORTANT AFTER RECEIVING A TOOL'S RESPONSE >>*:\n
 When you receive a tool's response, follow these steps:\n
@@ -217,14 +221,16 @@ def generate_system_prompt(
 
 def generate_tool_format(
     tools_by_server: Dict[str, List[Dict[str, Any]]],
+    cluster_context: Optional[str] = None
 ) -> str:
     """Generate a formatted description of tools grouped by server.
     
-    This function follows a simple format inspired by the Python SDK example,
-    focusing on tool names, descriptions, and parameters.
+    This function produces a more detailed format that clearly distinguishes
+    between cluster-specific tools and local tools, with improved organization.
     
     Args:
         tools_by_server: Dictionary mapping server names to lists of tools.
+        cluster_context: Optional name of the active cluster for highlighting.
         
     Returns:
         Formatted string describing available tools.
@@ -232,41 +238,137 @@ def generate_tool_format(
     if not tools_by_server:
         return "No tools available."
     
-    sections = []
+    # Organize servers into cluster-specific and local categories
+    cluster_servers = {}
+    local_servers = {}
+    other_servers = {}
     
     for server_name, tools in tools_by_server.items():
-        section_title = f"Server: {server_name}"
-        tool_descriptions = []
-        
-        for tool in tools:
-            name = tool.get("name", "unknown")
-            description = tool.get("description", "No description available")
+        # Simple classification based on server name patterns
+        if cluster_context and cluster_context.lower() in server_name.lower():
+            cluster_servers[server_name] = tools
+        elif "local" in server_name.lower():
+            local_servers[server_name] = tools
+        else:
+            other_servers[server_name] = tools
+    
+    sections = []
+    
+    # Add active cluster section if applicable
+    if cluster_context and cluster_servers:
+        sections.append(f"## ACTIVE CLUSTER: {cluster_context}")
+        for server_name, tools in cluster_servers.items():
+            section_title = f"Server: {server_name}"
+            tool_descriptions = []
             
-            # Format input schema information if available
-            input_params = []
-            input_schema = tool.get("inputSchema", {})
-            properties = input_schema.get("properties", {})
-            required = input_schema.get("required", [])
-            
-            for param_name, param_info in properties.items():
-                param_desc = param_info.get("description", "No description")
-                is_required = param_name in required
-                req_marker = " (required)" if is_required else ""
+            for tool in tools:
+                name = tool.get("name", "unknown")
+                description = tool.get("description", "No description available")
                 
-                input_params.append(f"- {param_name}: {param_desc}{req_marker}")
+                # Format input schema information if available
+                input_params = []
+                input_schema = tool.get("inputSchema", {})
+                properties = input_schema.get("properties", {})
+                required = input_schema.get("required", [])
+                
+                for param_name, param_info in properties.items():
+                    param_desc = param_info.get("description", "No description")
+                    param_type = param_info.get("type", "any")
+                    is_required = param_name in required
+                    req_marker = " (required)" if is_required else ""
+                    
+                    input_params.append(f"- {param_name}: {param_desc}{req_marker}")
+                
+                # Format tool description
+                tool_desc = [f"\nTool: {name}"]
+                tool_desc.append(f"Description: {description}")
+                
+                if input_params:
+                    tool_desc.append("Arguments:")
+                    tool_desc.extend(input_params)
+                
+                tool_descriptions.append("\n".join(tool_desc))
             
-            # Format tool description
-            tool_desc = [f"\nTool: {name}"]
-            tool_desc.append(f"Description: {description}")
+            # Add server section
+            if tool_descriptions:
+                sections.append(f"{section_title}\n\n" + "\n\n".join(tool_descriptions))
+    
+    # Add local servers section
+    if local_servers:
+        sections.append(f"\n## LOCAL TOOLS")
+        for server_name, tools in local_servers.items():
+            section_title = f"Server: {server_name}"
+            tool_descriptions = []
             
-            if input_params:
-                tool_desc.append("Arguments:")
-                tool_desc.extend(input_params)
+            for tool in tools:
+                name = tool.get("name", "unknown")
+                description = tool.get("description", "No description available")
+                
+                # Format input schema information if available
+                input_params = []
+                input_schema = tool.get("inputSchema", {})
+                properties = input_schema.get("properties", {})
+                required = input_schema.get("required", [])
+                
+                for param_name, param_info in properties.items():
+                    param_desc = param_info.get("description", "No description")
+                    param_type = param_info.get("type", "any")
+                    is_required = param_name in required
+                    req_marker = " (required)" if is_required else ""
+                    
+                    input_params.append(f"- {param_name}: {param_desc}{req_marker}")
+                
+                # Format tool description
+                tool_desc = [f"\nTool: {name}"]
+                tool_desc.append(f"Description: {description}")
+                
+                if input_params:
+                    tool_desc.append("Arguments:")
+                    tool_desc.extend(input_params)
+                
+                tool_descriptions.append("\n".join(tool_desc))
             
-            tool_descriptions.append("\n".join(tool_desc))
-        
-        # Add server section to sections
-        if tool_descriptions:
-            sections.append(f"{section_title}\n\n" + "\n\n".join(tool_descriptions))
+            # Add server section
+            if tool_descriptions:
+                sections.append(f"{section_title}\n\n" + "\n\n".join(tool_descriptions))
+    
+    # Add other servers section (if any)
+    if other_servers:
+        sections.append(f"\n## OTHER TOOLS")
+        for server_name, tools in other_servers.items():
+            section_title = f"Server: {server_name}"
+            tool_descriptions = []
+            
+            for tool in tools:
+                name = tool.get("name", "unknown")
+                description = tool.get("description", "No description available")
+                
+                # Format input schema information if available
+                input_params = []
+                input_schema = tool.get("inputSchema", {})
+                properties = input_schema.get("properties", {})
+                required = input_schema.get("required", [])
+                
+                for param_name, param_info in properties.items():
+                    param_desc = param_info.get("description", "No description")
+                    param_type = param_info.get("type", "any")
+                    is_required = param_name in required
+                    req_marker = " (required)" if is_required else ""
+                    
+                    input_params.append(f"- {param_name}: {param_desc}{req_marker}")
+                
+                # Format tool description
+                tool_desc = [f"\nTool: {name}"]
+                tool_desc.append(f"Description: {description}")
+                
+                if input_params:
+                    tool_desc.append("Arguments:")
+                    tool_desc.extend(input_params)
+                
+                tool_descriptions.append("\n".join(tool_desc))
+            
+            # Add server section
+            if tool_descriptions:
+                sections.append(f"{section_title}\n\n" + "\n\n".join(tool_descriptions))
     
     return "\n\n".join(sections)

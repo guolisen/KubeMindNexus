@@ -84,25 +84,32 @@ class ReactLoop:
         # Get available tools
         all_tools = self.mcp_hub.get_all_available_tools()
         
-        # Flatten tools into a single list for LLM use
-        tools: List[Dict[str, Any]] = []
-        for server_name, server_tools in all_tools.items():
-            tools.extend(server_tools)
+        # If a cluster context is provided, make sure to include both cluster-specific
+        # and local tools to provide a complete set of capabilities
+        if current_cluster:
+            # Get local tools
+            local_tools = self.mcp_hub.get_local_tools()
             
+            # Merge tools, ensuring both cluster and local tools are included
+            for server_name, server_tools in local_tools.items():
+                if server_name not in all_tools:
+                    all_tools[server_name] = server_tools
+        
         # Convert tools to prepare for LLM
         # For some models we need to map between inputSchema and parameters
-        for tool in tools:
-            if "inputSchema" not in tool and "parameters" in tool:
-                tool["inputSchema"] = tool["parameters"]
+        for server_name, server_tools in all_tools.items():
+            for tool in server_tools:
+                if "inputSchema" not in tool and "parameters" in tool:
+                    tool["inputSchema"] = tool["parameters"]
         
-        # Format tools for the system prompt
+        # Format tools for the system prompt with cluster context
         # Either use the enhanced formatter or fall back to the basic one
         try:
-            tools_description = generate_tool_format(all_tools)
-            logger.info("Using enhanced tool formatting for system prompt")
+            tools_description = generate_tool_format(all_tools, current_cluster)
+            logger.info(f"Using enhanced tool formatting for system prompt with cluster: {current_cluster}")
         except Exception as e:
             logger.warning(f"Error using enhanced tool formatting, falling back to basic: {str(e)}")
-            tools_description = self.mcp_hub.format_tools_for_prompt()
+            tools_description = self.mcp_hub.format_tools_for_prompt(current_cluster)
         
         # Generate the system prompt
         system_prompt_template = self.config.config.system_prompt_template

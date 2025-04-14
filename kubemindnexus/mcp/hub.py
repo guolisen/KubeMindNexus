@@ -274,18 +274,34 @@ class MCPHub:
         # No specific cluster/tool found
         return None
     
-    def format_tools_for_prompt(self) -> str:
+    def format_tools_for_prompt(self, cluster_context: Optional[str] = None) -> str:
         """Format available tools for use in an LLM prompt.
         
+        Args:
+            cluster_context: Optional name of the active cluster for highlighting.
+            
         Returns:
             Formatted string describing available tools.
         """
         tools_by_server = self.get_all_available_tools()
         
+        # If a cluster context is provided, make sure to include local tools as well
+        if cluster_context:
+            # Get local tools
+            local_tools = self.get_local_tools()
+            
+            # Merge tools, ensuring both cluster and local tools are included
+            for server_name, server_tools in local_tools.items():
+                if server_name not in tools_by_server:
+                    tools_by_server[server_name] = server_tools
+        
         if not tools_by_server:
             return "No tools available."
             
-        sections = []
+        # Organize servers into categories
+        cluster_sections = []
+        local_sections = []
+        other_sections = []
         
         for server_name, tools in tools_by_server.items():
             server = self.manager.get_server_by_name(server_name)
@@ -293,18 +309,29 @@ class MCPHub:
             if not server:
                 continue
                 
-            # Create server section with metadata
+            # Create section header
             section_info = []
-            if server.cluster_name:
-                section_title = f"Cluster '{server.cluster_name}' - Server '{server_name}'"
-                section_info.append(f"Cluster Context: {server.cluster_name}")
-            else:
-                section_title = f"Server '{server_name}'"
-                
-            if server.is_local:
+            
+            # Determine which category this server belongs to
+            if server.cluster_name and server.cluster_name == cluster_context:
+                # This is a server for the active cluster
+                section_title = f"Server: {server_name}"
+                section_info.append(f"Cluster: {server.cluster_name} (ACTIVE)")
+                current_sections = cluster_sections
+            elif server.is_local:
+                # This is a local server
+                section_title = f"Server: {server_name}"
                 section_info.append("Type: Local Server")
+                current_sections = local_sections
             else:
-                section_info.append("Type: Remote Server")
+                # This is some other server
+                if server.cluster_name:
+                    section_title = f"Server: {server_name}"
+                    section_info.append(f"Cluster: {server.cluster_name}")
+                else:
+                    section_title = f"Server: {server_name}"
+                    section_info.append("Type: Remote Server")
+                current_sections = other_sections
                 
             # Add server metadata if available
             section_header = [section_title]
@@ -371,7 +398,22 @@ class MCPHub:
                     
                 tool_descriptions.append(tool_desc)
                 
-            # Add server section to sections
-            sections.append("\n".join(section_header) + "\n\n" + "\n\n".join(tool_descriptions))
+            # Add server section to the appropriate category
+            current_sections.append("\n".join(section_header) + "\n\n" + "\n\n".join(tool_descriptions))
         
-        return "\n\n".join(sections)
+        # Combine all sections in order (cluster, local, other)
+        final_sections = []
+        
+        if cluster_sections:
+            final_sections.append("## ACTIVE CLUSTER TOOLS")
+            final_sections.extend(cluster_sections)
+            
+        if local_sections:
+            final_sections.append("## LOCAL TOOLS")
+            final_sections.extend(local_sections)
+            
+        if other_sections:
+            final_sections.append("## OTHER CLUSTER TOOLS")
+            final_sections.extend(other_sections)
+            
+        return "\n\n".join(final_sections)
