@@ -179,6 +179,7 @@ class LLMConfig(BaseModel):
 async def create_cluster(
     cluster: ClusterCreate,
     db_manager: DatabaseManager = Depends(get_db_manager),
+    mcp_hub: MCPHub = Depends(get_mcp_hub),
 ):
     """Create a new cluster."""
     try:
@@ -195,6 +196,27 @@ async def create_cluster(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create cluster",
             )
+        
+        # Automatically add an MCP K8s server for this cluster
+        try:
+            # Construct the SSE URL using the cluster's IP and port
+            sse_url = f"http://{cluster.ip}:{cluster.port}/sse"
+            server_name = f"{cluster.name}-mcp-k8s-server"
+            
+            # Add the MCP server
+            await mcp_hub.manager.add_server(
+                name=server_name,
+                server_type=ServerType.SSE.value,
+                url=sse_url,
+                cluster_id=cluster_id,
+                is_local=False,
+                is_default=False,
+            )
+            
+            logger.info(f"Automatically added MCP K8s server {server_name} for cluster {cluster.name}")
+        except Exception as e:
+            logger.error(f"Failed to automatically add MCP K8s server for cluster {cluster.name}: {str(e)}")
+            # Continue even if adding the MCP server fails
             
         return created_cluster
         
@@ -317,9 +339,18 @@ async def delete_cluster(
         # Get MCP servers for this cluster
         servers = db_manager.get_mcp_servers_by_cluster(cluster_id)
         
-        # Disconnect any connected servers
+        # Disconnect and delete any associated MCP servers
         for server in servers:
+            # First disconnect the server
             await mcp_hub.manager.disconnect_server(server["name"])
+            
+            # Then delete the server
+            server_id = server["id"]
+            success = await mcp_hub.manager.remove_server(server_id)
+            if success:
+                logger.info(f"Deleted MCP server '{server['name']}' associated with cluster '{existing_cluster['name']}'")
+            else:
+                logger.warning(f"Failed to delete MCP server '{server['name']}' associated with cluster '{existing_cluster['name']}'")
             
         # Delete cluster
         success = db_manager.delete_cluster(cluster_id)
