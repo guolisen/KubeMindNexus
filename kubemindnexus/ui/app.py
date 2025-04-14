@@ -153,7 +153,7 @@ class StreamlitApp:
             self._render_chat_page()
         elif st.session_state.current_page == "Clusters":
             self._render_clusters_page()
-        elif st.session_state.current_page == "MCP Servers":
+        elif st.session_state.current_page == "Local MCP Servers":
             self._render_mcp_servers_page()
         
         # Close API client when app is closed
@@ -174,8 +174,8 @@ class StreamlitApp:
                 st.session_state.current_page = "Clusters"
                 st.rerun()
                 
-            if st.button("MCP Servers", use_container_width=True):
-                st.session_state.current_page = "MCP Servers"
+            if st.button("Local MCP Servers", use_container_width=True):
+                st.session_state.current_page = "Local MCP Servers"
                 st.rerun()
             
             # Current cluster selection
@@ -454,50 +454,163 @@ class StreamlitApp:
                             st.markdown(f"**Created At:** {cluster['created_at']}")
                             st.markdown(f"**Description:** {cluster['description'] or 'N/A'}")
                     
-                    # Display cluster MCP servers
+                    # Display and manage cluster MCP servers
                     with st.expander("Cluster MCP Servers", expanded=True):
-                        if not servers:
-                            st.info("No MCP servers associated with this cluster.")
-                        else:
-                            for server in servers:
-                                st.markdown(f"**{server['name']}** ({server['type']})")
-                                
-                                # Get server status from API
-                                server_status = AsyncToSync.run(
-                                    self.api_client.get_mcp_server_status(server['id'])
-                                )
-                                is_connected = server_status["is_connected"] if server_status else False
-                                status_text = "Connected" if is_connected else "Disconnected"
-                                status_color = "green" if is_connected else "red"
-                                
-                                st.markdown(f"Status: <span style='color:{status_color}'>{status_text}</span>", unsafe_allow_html=True)
-                                
-                                # Connect/disconnect buttons
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    if not is_connected:
-                                        if st.button(f"Connect to {server['name']}", key=f"connect_{server['id']}"):
-                                            success = AsyncToSync.run(
-                                                self.api_client.connect_mcp_server(server['id'])
-                                            )
-                                            if success:
-                                                st.success(f"Connected to server {server['name']}")
-                                                st.rerun()
+                        server_tabs = st.tabs(["Current Servers", "Add Server"])
+                        
+                        with server_tabs[0]:  # Current Servers tab
+                            if not servers:
+                                st.info("No MCP servers associated with this cluster.")
+                            else:
+                                for server in servers:
+                                    with st.container():
+                                        st.markdown(f"**{server['name']}** ({server['type']})")
+                                        
+                                        # Get server status from API
+                                        server_status = AsyncToSync.run(
+                                            self.api_client.get_mcp_server_status(server['id'])
+                                        )
+                                        is_connected = server_status["is_connected"] if server_status else False
+                                        status_text = "Connected" if is_connected else "Disconnected"
+                                        status_color = "green" if is_connected else "red"
+                                        
+                                        st.markdown(f"Status: <span style='color:{status_color}'>{status_text}</span>", unsafe_allow_html=True)
+                                        
+                                        # Server details
+                                        details_cols = st.columns(2)
+                                        with details_cols[0]:
+                                            st.markdown(f"**Type:** {server['type']}")
+                                            if server["type"] == "stdio":
+                                                st.markdown(f"**Command:** {server['command']}")
+                                                if server["args"]:
+                                                    st.markdown(f"**Args:** {', '.join(server['args'])}")
                                             else:
-                                                st.error(f"Failed to connect to server {server['name']}")
-                                with col2:
-                                    if is_connected:
-                                        if st.button(f"Disconnect from {server['name']}", key=f"disconnect_{server['id']}"):
-                                            success = AsyncToSync.run(
-                                                self.api_client.disconnect_mcp_server(server['id'])
-                                            )
-                                            if success:
-                                                st.success(f"Disconnected from server {server['name']}")
-                                                st.rerun()
+                                                st.markdown(f"**URL:** {server['url']}")
+                                        
+                                        with details_cols[1]:
+                                            st.markdown(f"**ID:** {server['id']}")
+                                            st.markdown(f"**Local:** {'Yes' if server['is_local'] else 'No'}")
+                                            st.markdown(f"**Default:** {'Yes' if server['is_default'] else 'No'}")
+                                        
+                                        # Connect/disconnect buttons
+                                        action_cols = st.columns(3)
+                                        with action_cols[0]:
+                                            if not is_connected:
+                                                if st.button(f"Connect", key=f"connect_{server['id']}"):
+                                                    success = AsyncToSync.run(
+                                                        self.api_client.connect_mcp_server(server['id'])
+                                                    )
+                                                    if success:
+                                                        st.success(f"Connected to server {server['name']}")
+                                                        st.rerun()
+                                                    else:
+                                                        st.error(f"Failed to connect to server {server['name']}")
                                             else:
-                                                st.error(f"Failed to disconnect from server {server['name']}")
+                                                if st.button(f"Disconnect", key=f"disconnect_{server['id']}"):
+                                                    success = AsyncToSync.run(
+                                                        self.api_client.disconnect_mcp_server(server['id'])
+                                                    )
+                                                    if success:
+                                                        st.success(f"Disconnected from server {server['name']}")
+                                                        st.rerun()
+                                                    else:
+                                                        st.error(f"Failed to disconnect from server {server['name']}")
+                                        
+                                        with action_cols[2]:
+                                            # Delete button
+                                            if st.button("Delete", key=f"delete_server_{server['id']}"):
+                                                if is_connected:
+                                                    # First disconnect if connected
+                                                    disconnect_success = AsyncToSync.run(
+                                                        self.api_client.disconnect_mcp_server(server['id'])
+                                                    )
+                                                    if not disconnect_success:
+                                                        st.error(f"Failed to disconnect from server {server['name']} before deletion")
+                                                        continue
+                                                
+                                                # Now delete the server
+                                                delete_success = AsyncToSync.run(
+                                                    self.api_client.delete_mcp_server(server['id'])
+                                                )
+                                                if delete_success:
+                                                    st.success(f"Deleted server {server['name']}")
+                                                    st.rerun()
+                                                else:
+                                                    st.error(f"Failed to delete server {server['name']}")
+                                        
+                                        st.divider()
+                        
+                        with server_tabs[1]:  # Add Server tab
+                            st.subheader(f"Add MCP Server for Cluster: {selected_name}")
+                            
+                            with st.form(f"add_cluster_server_form_{selected_id}"):
+                                name = st.text_input("Server Name")
+                                server_type = st.selectbox("Server Type", ["stdio", "sse"])
+                                
+                                if server_type == "stdio":
+                                    command = st.text_input("Command")
+                                    args_str = st.text_input("Arguments (comma-separated)")
+                                    url = None
+                                else:  # SSE type
+                                    command = None
+                                    args_str = None
+                                    # Default to cluster's IP and port
+                                    default_url = f"http://{cluster['ip']}:{cluster['port']}/sse"
+                                    url = st.text_input("URL", value=default_url)
+                                
+                                is_local = False  # Cluster servers are not local
+                                is_default = st.checkbox("Make Default Server")
+                                
+                                env_str = st.text_area("Environment Variables (key=value, one per line)")
+                                
+                                if st.form_submit_button("Add Server"):
+                                    if not name:
+                                        st.error("Server name is required.")
+                                    else:
+                                        # Check if server name already exists
+                                        existing_servers = AsyncToSync.run(self.api_client.get_mcp_servers())
+                                        server_names = [s["name"] for s in existing_servers]
+                                        
+                                        if name in server_names:
+                                            st.error(f"A server with the name '{name}' already exists. Please choose a different name.")
+                                        else:
+                                            # Process arguments
+                                            args = None
+                                            if args_str:
+                                                args = [arg.strip() for arg in args_str.split(",")]
+                                                
+                                            # Process environment variables
+                                            env = {}
+                                            if env_str:
+                                                for line in env_str.strip().split("\n"):
+                                                    if "=" in line:
+                                                        key, value = line.split("=", 1)
+                                                        env[key.strip()] = value.strip()
                                             
-                                st.divider()
+                                            try:
+                                                # Create server through API
+                                                server_id = AsyncToSync.run(
+                                                    self.api_client.add_mcp_server(
+                                                        name=name,
+                                                        server_type=server_type,
+                                                        command=command,
+                                                        args=args,
+                                                        url=url,
+                                                        cluster_id=selected_id,
+                                                        is_local=is_local,
+                                                        is_default=is_default,
+                                                        env=env,
+                                                    )
+                                                )
+                                                
+                                                if server_id:
+                                                    st.success(f"Server '{name}' added successfully to cluster {selected_name}.")
+                                                    st.rerun()
+                                                else:
+                                                    st.error("Failed to add server.")
+                                                
+                                            except Exception as e:
+                                                st.error(f"Failed to add server: {str(e)}")
                     
                     # Cluster deletion
                     with st.expander("Danger Zone", expanded=False):
@@ -741,10 +854,11 @@ class StreamlitApp:
     
     def _render_mcp_servers_page(self):
         """Render the MCP servers management page."""
-        st.header("MCP Servers")
+        st.header("Local MCP Servers")
         
-        # Get all MCP servers from API
-        servers = AsyncToSync.run(self.api_client.get_mcp_servers())
+        # Get all MCP servers from API and filter to only local ones
+        all_servers = AsyncToSync.run(self.api_client.get_mcp_servers())
+        servers = [server for server in all_servers if server.get("is_local", False)]
         
         # Tabs for different MCP server views
         list_tab, add_tab, tools_tab = st.tabs(["Servers List", "Add Server", "Available Tools"])
@@ -754,7 +868,7 @@ class StreamlitApp:
                 st.info("No MCP servers registered. Use the 'Add Server' tab to register one.")
             else:
                 # Display servers as a table
-                st.subheader("All MCP Servers")
+                st.subheader("Local MCP Servers")
                 
                 # Create a simplified view for the table
                 servers_view = []
@@ -908,55 +1022,64 @@ class StreamlitApp:
                     args_str = None
                     url = st.text_input("URL")
                 
-                is_local = st.checkbox("Local Server")
+                # Force set is_local to True and disable the checkbox since we're on the Local MCP Servers page
+                is_local = True
+                st.info("This server will be created as a local server.")
                 is_default = st.checkbox("Default Server")
                 
                 env_str = st.text_area("Environment Variables (key=value, one per line)")
                 
                 if st.form_submit_button("Add Server"):
-                    if name:
-                        # Process arguments
-                        args = None
-                        if args_str:
-                            args = [arg.strip() for arg in args_str.split(",")]
-                            
-                        # Process environment variables
-                        env = {}
-                        if env_str:
-                            for line in env_str.strip().split("\n"):
-                                if "=" in line:
-                                    key, value = line.split("=", 1)
-                                    env[key.strip()] = value.strip()
-                        
-                        # Extract selected cluster ID (if any)
-                        selected_cluster_id = cluster_id[0] if cluster_id and cluster_id[0] is not None else None
-                        
-                        try:
-                            # Create server through API
-                            server_id = AsyncToSync.run(
-                                self.api_client.add_mcp_server(
-                                    name=name,
-                                    server_type=server_type,
-                                    command=command,
-                                    args=args,
-                                    url=url,
-                                    cluster_id=selected_cluster_id,
-                                    is_local=is_local,
-                                    is_default=is_default,
-                                    env=env,
-                                )
-                            )
-                            
-                            if server_id:
-                                st.success(f"Server '{name}' added successfully.")
-                                st.rerun()
-                            else:
-                                st.error("Failed to add server.")
-                            
-                        except Exception as e:
-                            st.error(f"Failed to add server: {str(e)}")
-                    else:
+                    if not name:
                         st.error("Server name is required.")
+                    else:
+                        # Check if server name already exists
+                        existing_servers = AsyncToSync.run(self.api_client.get_mcp_servers())
+                        server_names = [s["name"] for s in existing_servers]
+                        
+                        if name in server_names:
+                            st.error(f"A server with the name '{name}' already exists. Please choose a different name.")
+                        else:
+                            # Process arguments
+                            args = None
+                            if args_str:
+                                args = [arg.strip() for arg in args_str.split(",")]
+                                
+                            # Process environment variables
+                            env = {}
+                            if env_str:
+                                for line in env_str.strip().split("\n"):
+                                    if "=" in line:
+                                        key, value = line.split("=", 1)
+                                        env[key.strip()] = value.strip()
+                            
+                            # Extract selected cluster ID (if any)
+                            selected_cluster_id = cluster_id[0] if cluster_id and cluster_id[0] is not None else None
+                            
+                            try:
+                                # Create server through API
+                                server_id = AsyncToSync.run(
+                                    self.api_client.add_mcp_server(
+                                        name=name,
+                                        server_type=server_type,
+                                        command=command,
+                                        args=args,
+                                        url=url,
+                                        cluster_id=selected_cluster_id,
+                                        is_local=is_local,
+                                        is_default=is_default,
+                                        env=env,
+                                    )
+                                )
+                                
+                                if server_id:
+                                    st.success(f"Server '{name}' added successfully.")
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to add server.")
+                                
+                            except Exception as e:
+                                st.error(f"Failed to add server: {str(e)}")
                         
         with tools_tab:
             if not servers:
