@@ -178,26 +178,6 @@ class StreamlitApp:
                 st.session_state.current_page = "Local MCP Servers"
                 st.rerun()
             
-            # Current cluster selection
-            st.divider()
-            st.subheader("Current Cluster")
-            
-            # Get clusters from API
-            clusters = AsyncToSync.run(self.api_client.get_clusters())
-            cluster_names = ["None"] + [c["name"] for c in clusters]
-            
-            current_cluster = st.selectbox(
-                "Select active cluster",
-                options=cluster_names,
-                index=0 if st.session_state.current_cluster is None else 
-                      cluster_names.index(st.session_state.current_cluster),
-            )
-            
-            if current_cluster == "None":
-                st.session_state.current_cluster = None
-            else:
-                st.session_state.current_cluster = current_cluster
-                
             # LLM provider selection
             st.divider()
             st.subheader("LLM Provider")
@@ -228,10 +208,6 @@ class StreamlitApp:
     def _render_chat_page(self):
         """Render the chat page."""
         st.header("Chat")
-        
-        # Show current cluster context if any
-        if st.session_state.current_cluster:
-            st.info(f"Active cluster: {st.session_state.current_cluster}")
         
         # Display chat history
         chat_container = st.container()
@@ -268,7 +244,27 @@ class StreamlitApp:
         
         # Chat input
         with st.form("chat_form", clear_on_submit=True):
+            # Get clusters from API for the selector
+            clusters = AsyncToSync.run(self.api_client.get_clusters())
+            cluster_names = ["None"] + [c["name"] for c in clusters]
+            
+            # Place cluster selector above the message input
+            current_cluster = st.selectbox(
+                "Select active cluster",
+                options=cluster_names,
+                index=0 if st.session_state.current_cluster is None else 
+                      cluster_names.index(st.session_state.current_cluster),
+            )
+            
+            # Message input area
             user_message = st.text_area("Type your message:", height=100)
+            
+            if current_cluster == "None":
+                st.session_state.current_cluster = None
+            else:
+                st.session_state.current_cluster = current_cluster
+            
+            # Submit and stop buttons
             submit_col, stop_col = st.columns([5, 1])
             
             with submit_col:
