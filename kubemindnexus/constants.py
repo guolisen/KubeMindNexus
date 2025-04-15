@@ -22,6 +22,7 @@ class LLMProvider(str, Enum):
 # ReAct loop constants
 REACT_MAX_ITERATIONS = 5
 REACT_SAFETY_TIMEOUT = 60  # seconds
+ATTEMPT_COMPLETION_TOOL_NAME = "attempt_completion"
 
 # Default system prompt template
 DEFAULT_SYSTEM_PROMPT = """

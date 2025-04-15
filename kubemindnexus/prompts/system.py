@@ -6,6 +6,7 @@ React loop guidance, and more.
 """
 
 from typing import Dict, List, Optional, Any
+from .attempt_completion import get_attempt_completion_tool
 
 
 def get_introduction() -> str:
@@ -175,6 +176,7 @@ When calling MCP tools, you MUST strictly follow these rules:
     - Do NOT include any reasoning or thought process
     - Do NOT respond with any other text, just the JSON object\n\n
     - If you want to return none property in JSON, just return "", Do NOT use 'None'
+    - All of JSON object should be formated when response to user.
 """
 
 def generate_system_prompt(
@@ -212,8 +214,22 @@ def generate_system_prompt(
     prompt_parts.append(get_kubernetes_guidance())
     #prompt_parts.append(get_response_guidelines())
     prompt_parts.append("\n=============\n")
+    
+    # Add attempt_completion tool to available tools
+    attempt_completion_tool = get_attempt_completion_tool()
+    available_tools_with_completion = available_tools
+    available_tools_with_completion += "\n\n## TASK COMPLETION TOOLS\n"
+    available_tools_with_completion += f"\nTool: {attempt_completion_tool['name']}\n"
+    available_tools_with_completion += f"Description: {attempt_completion_tool['description']}\n"
+    
+    # Add arguments description for attempt_completion
+    available_tools_with_completion += "Arguments:\n"
+    for param_name, param_info in attempt_completion_tool['inputSchema']['properties'].items():
+        req_marker = " (required)" if param_name in attempt_completion_tool['inputSchema']['required'] else ""
+        available_tools_with_completion += f"- {param_name}: {param_info['description']}{req_marker}\n"
+    
     # Add tool usage guidance
-    prompt_parts.append("AVAILABLE TOOLS:\n" + available_tools)
+    prompt_parts.append("AVAILABLE TOOLS:\n" + available_tools_with_completion)
     prompt_parts.append(get_tool_usage_guidance())
 
     # Combine all sections
@@ -231,7 +247,8 @@ def generate_tool_format(
     between cluster-specific tools and local tools, with improved organization.
     
     Args:
-        tools_by_server: Dictionary mapping server names to lists of tools.
+        tools_by_cluster: Dictionary mapping cluster server names to lists of tools.
+        tools_by_local: Dictionary mapping local server names to lists of tools.
         cluster_context: Optional name of the active cluster for highlighting.
         
     Returns:
