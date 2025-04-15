@@ -202,8 +202,21 @@ class ReactLoop:
                 response_text = match.group(1).strip()
                 print(response_text)
 
+            # Try to format the JSON before parsing it
+            formatted_json = response_text
             try:
-                tool_call = json.loads(response_text)
+                # Try to parse and then re-format the JSON to ensure proper formatting
+                # This can fix minor JSON formatting issues like trailing commas, missing quotes, etc.
+                json_obj = json.loads(response_text.replace("'", '"').replace("\n", "").strip())
+                formatted_json = json.dumps(json_obj)
+                logger.info("Successfully formatted JSON")
+            except json.JSONDecodeError:
+                # If basic formatting failed, keep the original response
+                logger.info("Could not pre-format JSON, using original")
+                formatted_json = response_text
+
+            try:
+                tool_call = json.loads(formatted_json)
             except json.JSONDecodeError as e:
                 # Not JSON, just a regular response
                 logger.info(f"Response is not a JSON tool call: {str(e)}")
@@ -269,22 +282,45 @@ class ReactLoop:
                     )
                     
                     if not success:
-                        tool_result = f"Error executing tool {tool_name}: {tool_result}"
-                        logger.error(tool_result)
+                        error_message = f"Error executing tool {tool_name}: {tool_result}"
+                        logger.error(error_message)
+                        
+                        # Create a more structured message that guides the LLM's decision
+                        decision_prompt = (
+                            f"A tool execution error occurred:\n"
+                            f"Tool: {tool_name}\n"
+                            f"Error: {tool_result}\n\n"
+                            f"Based on this error, you have two options:\n"
+                            f"1. CONTINUE: If you think this error is non-fatal and you can try an alternative approach\n"
+                            f"2. STOP: If you think this error prevents task completion and you should provide a final response\n\n"
+                            f"Respond with either:\n"
+                            f"- To continue: Explain your alternative approach and proceed with another tool call\n"
+                            f"- To stop: Use the attempt_completion tool with an explanation of why the task cannot be completed"
+                        )
+                        
+                        # Add to conversation history
+                        tool_messages.append({
+                            "role": "assistant",
+                            "content": response_text
+                        })
+                        
+                        tool_messages.append({
+                            "role": "user",
+                            "content": decision_prompt
+                        })
+                    else:
+                        logger.info("Call Tools result: {}".format(tool_result))
 
-                    logger.info("Call Tools result: {}".format(tool_result))
-
-                # Add tool result to messages for context
-                tool_messages.append({
-                    "role": "assistant",
-                    "content": response_text
-                })
-                
-                tool_messages.append({
-                    "role": "user",
-                    #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
-                    "content": str(tool_result)
-                })
+                        # Add successful tool result to messages for context
+                        tool_messages.append({
+                            "role": "assistant",
+                            "content": response_text
+                        })
+                        
+                        tool_messages.append({
+                            "role": "user",
+                            "content": str(tool_result)
+                        })
                 
                 # Continue to next iteration
                 continue

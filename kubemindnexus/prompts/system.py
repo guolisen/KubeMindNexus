@@ -43,6 +43,13 @@ When working on tasks, follow this reasoning and acting process:
    - Plan additional actions if needed
    - Prepare a clear response based on all information gathered
 
+5. ERROR HANDLING: Respond appropriately to tool execution errors
+   - When a tool execution fails, analyze whether the error is fatal to task completion
+   - For non-fatal errors, propose alternative approaches or tools to achieve the goal
+   - For fatal errors that prevent task completion, use the attempt_completion tool to explain
+     the issues encountered and provide any partial results or alternative suggestions
+   - Be specific about why an error occurred and how it impacts the overall task
+
 This iterative process ensures thorough analysis and effective problem-solving for Kubernetes management tasks.
 """
 
@@ -142,7 +149,7 @@ Choose the appropriate tool based on the user's question.
     - If no tool is needed, reply directly.
     - If cannot find the parameters from current context, ask user for more information. 
 IMPORTANT: When you need to use a tool, you must ONLY respond with
-the exact JSON object format below, nothing else, << the JSON object must be formatted >>:\n
+the exact formated JSON object format below, nothing else, << the JSON object must be formatted >>:\n
 
 {
   "server": "server_name",  // Must include the exact server name from the tool description
@@ -165,18 +172,16 @@ When you receive a tool's response, follow these steps:\n
 3. Focus on the most relevant information\n
 4. Use appropriate context from the user's question\n
 5. Avoid simply repeating the raw data\n
-6. If current information also CANNOT MEET the requirement of user, try continue to call tools.\n
-*7. If current information also MEET the requirement of user, summerize all of message and give the final response according to user's query*\n
 
-*<<TOOL USAGE GUIDELINES>>*
-*<< MUST IMPORTANT NOTICE >>*:
-When calling MCP tools, you MUST strictly follow these rules:
-    - Return ONLY a valid JSON object formatted as a tool call request
-    - Absolutely NO explanations, comments, or extra text
-    - Do NOT include any reasoning or thought process
-    - Do NOT respond with any other text, just the JSON object\n\n
-    - If you want to return none property in JSON, just return "", Do NOT use 'None'
-    - All of JSON object should be formated when response to user.
+*<<TOOL USAGE GUIDELINES>>*\n
+*<< MUST IMPORTANT NOTICE >>*:\n
+When calling MCP tools, you MUST strictly follow these rules:\n
+    - !! Return ONLY a valid JSON object formatted as a tool call request !!\n
+    - Absolutely NO explanations, comments, or extra text\n
+    - Do NOT include any reasoning or thought process\n
+    - Do NOT respond with any other text, just the formated JSON object\n
+    - If you want to return none property in formated JSON, just return "", Do NOT use 'None'\n
+    - All of JSON object should be show pretty format when response to user.\n
 """
 
 def generate_system_prompt(
