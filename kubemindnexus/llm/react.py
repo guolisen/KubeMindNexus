@@ -132,7 +132,7 @@ class ReactLoop:
                     include_mcp_guidance=include_mcp_guidance,
                     include_react_guidance=include_react_guidance
                 )
-                logger.info("Using enhanced modular system prompt {}".format(system_prompt))
+                logger.info("Using enhanced modular system prompt")
             except Exception as e:
                 # Fall back to the legacy template if there's an error
                 logger.warning(f"Error generating enhanced system prompt, falling back to legacy: {str(e)}")
@@ -188,62 +188,73 @@ class ReactLoop:
             )
             
             # Check if response_text is a JSON MCP tool call
+            pattern = r'```json([\s\S]*?)```'
+            match = re.search(pattern, response_text)
+
+            if match:
+                response_text = match.group(1).strip()
+                print(response_text)
+
             try:
-                pattern = r'```json([\s\S]*?)```'
-                match = re.search(pattern, response_text)
-
-                if match:
-                    response_text = match.group(1).strip()
-                    print(response_text)
-
                 tool_call = json.loads(response_text)
-                if isinstance(tool_call, dict) and "tool" in tool_call and "parameters" in tool_call:
-                    # This is an MCP tool call
-                    tool_name = tool_call["tool"]
-                    tool_args = tool_call["parameters"]
-                    
-                    logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
-                    
-                    # Find the server for this tool
-                    server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
-                    
-                    if not server_name:
-                        tool_result = f"Error: Tool {tool_name} not found in any available server."
-                        logger.error(tool_result)
-                    else:
-                        # Execute the tool
-                        success, tool_result = await self.mcp_hub.execute_tool(
-                            server_name, tool_name, tool_args, chat_id
-                        )
-                        
-                        if not success:
-                            tool_result = f"Error executing tool {tool_name}: {tool_result}"
-                            logger.error(tool_result)
-                    
-                    # Add tool result to messages for context
-                    tool_messages.append({
-                        "role": "assistant",
-                        "content": response_text
-                    })
-                    
-                    tool_messages.append({
-                        "role": "user",
-                        #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
-                        "content": str(tool_result)
-                    })
-                    
-                    # Continue to next iteration
-                    continue
-                else:
-                    # Not a tool call, just a regular response
-                    final_response = response_text
-                    break
             except json.JSONDecodeError as e:
                 # Not JSON, just a regular response
                 logger.info(f"Response is not a JSON tool call: {str(e)}")
+                # Add tool result to messages for context
+                tool_messages.append({
+                    "role": "assistant",
+                    "content": response_text
+                })
+                
+                tool_messages.append({
+                    "role": "user",
+                    #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
+                    "content": str("your json has error, analysis and correct error: " + str(e))
+                })
+                continue
+
+            if isinstance(tool_call, dict) and "tool" in tool_call and "parameters" in tool_call:
+                # This is an MCP tool call
+                tool_name = tool_call["tool"]
+                tool_args = tool_call["parameters"]
+                
+                logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
+                
+                # Find the server for this tool
+                server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
+                
+                if not server_name:
+                    tool_result = f"Error: Tool {tool_name} not found in any available server."
+                    logger.error(tool_result)
+                else:
+                    # Execute the tool
+                    success, tool_result = await self.mcp_hub.execute_tool(
+                        server_name, tool_name, tool_args, chat_id
+                    )
+                    
+                    if not success:
+                        tool_result = f"Error executing tool {tool_name}: {tool_result}"
+                        logger.error(tool_result)
+                
+                # Add tool result to messages for context
+                tool_messages.append({
+                    "role": "assistant",
+                    "content": response_text
+                })
+                
+                tool_messages.append({
+                    "role": "user",
+                    #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
+                    "content": str(tool_result)
+                })
+                
+                # Continue to next iteration
+                continue
+            else:
+                # Not a tool call, just a regular response
                 final_response = response_text
                 break
-            
+
             # If we've reached the max iterations, generate a final response
             if iteration == self.max_iterations:
                 # Create messages with all tool results

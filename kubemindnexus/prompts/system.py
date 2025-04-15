@@ -164,7 +164,8 @@ When you receive a tool's response, follow these steps:\n
 3. Focus on the most relevant information\n
 4. Use appropriate context from the user's question\n
 5. Avoid simply repeating the raw data\n
-6. If no need to call tools, summerize all of message and give the final response according to user's query\n
+6. If current information also cannot meet the requirement of user, try continue to call tools.\n
+7. If no need to call tools, summerize all of message and give the final response according to user's query\n
 
 *<<TOOL USAGE GUIDELINES>>*
 *<< MUST IMPORTANT NOTICE >>*:
