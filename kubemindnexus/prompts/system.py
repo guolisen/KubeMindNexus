@@ -220,7 +220,8 @@ def generate_system_prompt(
 
 
 def generate_tool_format(
-    tools_by_server: Dict[str, List[Dict[str, Any]]],
+    tools_by_cluster: Dict[str, List[Dict[str, Any]]],
+    tools_by_local: Dict[str, List[Dict[str, Any]]],
     cluster_context: Optional[str] = None
 ) -> str:
     """Generate a formatted description of tools grouped by server.
@@ -235,23 +236,19 @@ def generate_tool_format(
     Returns:
         Formatted string describing available tools.
     """
-    if not tools_by_server:
+    if not tools_by_cluster and not tools_by_local:
         return "No tools available."
-    
+
     # Organize servers into cluster-specific and local categories
     cluster_servers = {}
     local_servers = {}
     other_servers = {}
     
-    for server_name, tools in tools_by_server.items():
-        # Simple classification based on server name patterns
-        if cluster_context and cluster_context.lower() in server_name.lower():
-            cluster_servers[server_name] = tools
-        elif "local" in server_name.lower():
-            local_servers[server_name] = tools
-        else:
-            other_servers[server_name] = tools
-    
+    for server_name, tools in tools_by_cluster.items():
+        cluster_servers[server_name] = tools
+    for server_name, tools in tools_by_local.items():
+        local_servers[server_name] = tools
+
     sections = []
     
     # Add active cluster section if applicable

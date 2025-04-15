@@ -81,31 +81,30 @@ class ReactLoop:
         # Add the current user message
         messages.append({"role": "user", "content": user_message})
         
-        # Get available tools
-        all_tools = self.mcp_hub.get_all_available_tools()
-        
+        cluster_tools = {}
         # If a cluster context is provided, make sure to include both cluster-specific
         # and local tools to provide a complete set of capabilities
         if current_cluster:
-            # Get local tools
-            local_tools = self.mcp_hub.get_local_tools()
-            
-            # Merge tools, ensuring both cluster and local tools are included
-            for server_name, server_tools in local_tools.items():
-                if server_name not in all_tools:
-                    all_tools[server_name] = server_tools
+            cluster_tools = self.mcp_hub.get_tools_by_cluster(current_cluster)
+
+        # Get local tools
+        local_tools = self.mcp_hub.get_local_tools()
         
         # Convert tools to prepare for LLM
         # For some models we need to map between inputSchema and parameters
-        for server_name, server_tools in all_tools.items():
+        for server_name, server_tools in cluster_tools.items():
             for tool in server_tools:
                 if "inputSchema" not in tool and "parameters" in tool:
                     tool["inputSchema"] = tool["parameters"]
-        
+        for server_name, server_tools in local_tools.items():
+            for tool in server_tools:
+                if "inputSchema" not in tool and "parameters" in tool:
+                    tool["inputSchema"] = tool["parameters"]
+       
         # Format tools for the system prompt with cluster context
         # Either use the enhanced formatter or fall back to the basic one
         try:
-            tools_description = generate_tool_format(all_tools, current_cluster)
+            tools_description = generate_tool_format(cluster_tools, local_tools, current_cluster)
             logger.info(f"Using enhanced tool formatting for system prompt with cluster: {current_cluster}")
         except Exception as e:
             logger.warning(f"Error using enhanced tool formatting, falling back to basic: {str(e)}")
