@@ -141,7 +141,7 @@ Choose the appropriate tool based on the user's question.
     - If no tool is needed, reply directly.
     - If cannot find the parameters from current context, ask user for more information. 
 IMPORTANT: When you need to use a tool, you must ONLY respond with
-the exact JSON object format below, nothing else:\n
+the exact JSON object format below, nothing else, << the JSON object must be formatted >>:\n
 
 {
   "server": "server_name",  // Must include the exact server name from the tool description
@@ -164,8 +164,8 @@ When you receive a tool's response, follow these steps:\n
 3. Focus on the most relevant information\n
 4. Use appropriate context from the user's question\n
 5. Avoid simply repeating the raw data\n
-6. If current information also cannot meet the requirement of user, try continue to call tools.\n
-7. If no need to call tools, summerize all of message and give the final response according to user's query\n
+6. If current information also CANNOT MEET the requirement of user, try continue to call tools.\n
+*7. If current information also MEET the requirement of user, summerize all of message and give the final response according to user's query*\n
 
 *<<TOOL USAGE GUIDELINES>>*
 *<< MUST IMPORTANT NOTICE >>*:

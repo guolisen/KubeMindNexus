@@ -187,6 +187,8 @@ class ReactLoop:
                 current_messages, system_prompt
             )
             
+            logger.info("Receive LLM response: {}".format(response_text))
+
             # Check if response_text is a JSON MCP tool call
             pattern = r'```json([\s\S]*?)```'
             match = re.search(pattern, response_text)
@@ -209,7 +211,7 @@ class ReactLoop:
                 tool_messages.append({
                     "role": "user",
                     #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
-                    "content": str("your json has error, analysis and correct error: " + str(e))
+                    "content": str("your json has error, analysis and fix error, the JSON object must be formatted: " + str(e))
                 })
                 continue
 
@@ -235,7 +237,9 @@ class ReactLoop:
                     if not success:
                         tool_result = f"Error executing tool {tool_name}: {tool_result}"
                         logger.error(tool_result)
-                
+
+                    logger.info("Call Tools result: {}".format(tool_result))
+
                 # Add tool result to messages for context
                 tool_messages.append({
                     "role": "assistant",
