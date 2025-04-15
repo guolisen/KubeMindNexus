@@ -12,7 +12,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from ..config import Configuration
-from ..constants import REACT_MAX_ITERATIONS, REACT_SAFETY_TIMEOUT
+from ..constants import REACT_MAX_ITERATIONS, REACT_SAFETY_TIMEOUT, ATTEMPT_COMPLETION_TOOL_NAME
 from ..database import DatabaseManager
 from ..mcp.hub import MCPHub
 from ..prompts.system import generate_system_prompt, generate_tool_format
@@ -47,13 +47,17 @@ class ReactLoop:
         # Get ReAct settings from config
         self.max_iterations = config.config.react_max_iterations
         self.safety_timeout = config.config.react_safety_timeout
+        
+        # Task completion tracking
+        self.task_completed = False
+        self.completion_result = None
     
     async def run(
         self,
         user_message: str,
         conversation_history: Optional[List[Tuple[str, str]]] = None,
         current_cluster: Optional[str] = None,
-    ) -> Tuple[str, int]:
+    ) -> Tuple[str, int, Dict[str, Any]]:
         """Run the ReAct loop with enhanced system prompt and context management.
         
         Args:
@@ -62,7 +66,8 @@ class ReactLoop:
             current_cluster: Optional current cluster context.
             
         Returns:
-            Tuple of (final_response, chat_id).
+            Tuple of (final_response, chat_id, metadata_dict) where metadata_dict contains 
+            information about the task completion and execution.
         """
         # Start time for timeout tracking
         start_time = time.time()
@@ -255,6 +260,33 @@ class ReactLoop:
                     
                     logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
                     
+                    if tool_name == ATTEMPT_COMPLETION_TOOL_NAME:
+                        # This is a task completion signal
+                        logger.info("Detected attempt_completion tool call, completing task")
+                        
+                        # Get the completion result
+                        self.task_completed = True
+                        self.completion_result = tool_args.get("result", "Task completed successfully.")
+                        
+                        # Set the final response from the completion result
+                        final_response = self.completion_result
+                        
+                        # Add command execution logic if provided
+                        command = tool_args.get("command")
+                        if command:
+                            logger.info(f"Completion includes command to demonstrate result: {command}")
+                            # Note: In a real implementation, you might want to execute this command
+                            # or notify the UI to execute it
+                        
+                        # Log the completion
+                        tool_messages.append({
+                            "role": "assistant",
+                            "content": f"I've completed the task: {self.completion_result}"
+                        })
+                        
+                        # Break the loop as the task is complete
+                        break
+                
                     # Find the server for this tool
                     # server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
                     # server_name = self.mcp_hub.find_server_for_tool(tool_name)
@@ -295,8 +327,19 @@ class ReactLoop:
             except json.JSONDecodeError as e:
                 # Not JSON, just a regular response
                 logger.info(f"Response is not a JSON tool call: {str(e)}")
-                final_response = response_text
-                break
+
+                # Add tool result to messages for context
+                tool_messages.append({
+                    "role": "assistant",
+                    "content": response_text
+                })
+                
+                tool_messages.append({
+                    "role": "user",
+                    #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
+                    "content": str("your json has error, analysis and fix error, the JSON object must be formatted: " + str(e))
+                })
+                continue
             
             # If we've reached the max iterations, generate a final response
             if iteration == self.max_iterations:
@@ -340,4 +383,14 @@ class ReactLoop:
         except Exception as e:
             logger.error(f"Failed to save chat message: {str(e)}")
         
-        return final_response, chat_id
+        # Create metadata dictionary with execution info
+        metadata = {
+            "task_completed": self.task_completed,
+            "completion_result": self.completion_result,
+            "iterations": iteration,
+            "execution_time": time.time() - start_time,
+            "tool_count": len(tool_messages) // 2
+        }
+        
+        # Return the final response, chat ID, and metadata
+        return final_response, chat_id, metadata
