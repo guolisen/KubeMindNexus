@@ -167,7 +167,6 @@ Choose the appropriate tool based on the user's question.
     - If cannot find the parameters from current context, ask user for more information. 
 IMPORTANT: When you need to use a tool, you must ONLY respond with
 the exact formated JSON object format below, nothing else.
-- DO NOT response JSON data in just one line
 - the tools name is a property of the JSON object. DO NOT set the tool name outside the JSON object.
 
 Example 1:
@@ -180,7 +179,6 @@ Example 1:
     "param3": "",
   }
 }
-
 
 Example 2:
 {
@@ -432,9 +430,9 @@ def generate_tool_format(
                     tool_desc.extend(input_params)
                 
                 # Add JSON example
-                example_json = _create_example_json(server_name, name, properties, required)
-                tool_desc.append("\nExample Usage:")
-                tool_desc.append(example_json)
+                #example_json = _create_example_json(server_name, name, properties, required)
+                #tool_desc.append("\nExample Usage:")
+                #tool_desc.append(example_json)
                 
                 tool_descriptions.append("\n".join(tool_desc))
             

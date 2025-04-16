@@ -194,14 +194,49 @@ class ReactLoop:
             
             logger.info("Receive LLM response: {}".format(response_text))
 
-            # Check if response_text is a JSON MCP tool call
-            pattern = r'```json([\s\S]*?)```'
-            match = re.search(pattern, response_text)
-
-            if match:
-                response_text = match.group(1).strip()
-                print(response_text)
-
+            # Translate tool format if needed
+            def translate_tool_format(text):
+                """
+                Translate from simple format to nested JSON if the first line is a tool name.
+                
+                FROM:
+                filesystem_list_directory
+                {"path": "/home"}
+                
+                TO:
+                {
+                  "tool": "filesystem_list_directory",
+                  "parameters": {
+                    "path": "/home"
+                  }
+                }
+                """
+                lines = text.strip().split('\n', 1)
+                if len(lines) < 2:
+                    return text
+                
+                potential_tool_name = lines[0].strip()
+                potential_params = lines[1].strip()
+                
+                # Check if first line looks like a tool name (no spaces, no JSON characters)
+                if ' ' in potential_tool_name or '{' in potential_tool_name or '}' in potential_tool_name:
+                    return text
+                
+                # Try to parse the second part as JSON
+                try:
+                    params = json.loads(potential_params)
+                    # Create the new format
+                    transformed = {
+                        "tool": potential_tool_name,
+                        "parameters": params
+                    }
+                    return json.dumps(transformed)
+                except json.JSONDecodeError:
+                    return text
+            
+            # Apply translation if needed
+            response_text = translate_tool_format(response_text)
+            
             try:
                 tool_call = json.loads(response_text)
 
@@ -242,13 +277,31 @@ class ReactLoop:
                     
                     # Process regular MCP tool
                     # Find the server for this tool
-                    server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
+                    server_name = tool_call.get("server")
                     
+                    # If server_name is None, try to search tool name in mcp_hub
                     if not server_name:
-                        tool_result = f"Error: Tool {tool_name} not found in any available server."
-                        logger.error(tool_result)
-                    else:
-                        # Execute the tool
+                        server_name = self.mcp_hub.find_server_for_tool(tool_name)
+                        if server_name:
+                            logger.info(f"Found server {server_name} for tool {tool_name} via mcp_hub search")
+                        else:
+                            tool_result = f"Error: Tool {tool_name} not found in any available server."
+                            logger.error(tool_result)
+                            
+                            # Add to conversation history
+                            tool_messages.append({
+                                "role": "assistant",
+                                "content": response_text
+                            })
+                            
+                            tool_messages.append({
+                                "role": "user",
+                                "content": tool_result
+                            })
+                            continue
+                    
+                    # Execute the tool if we have a valid server_name
+                    if server_name:
                         success, tool_result = await self.mcp_hub.execute_tool(
                             server_name, tool_name, tool_args, chat_id
                         )
