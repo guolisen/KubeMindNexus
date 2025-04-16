@@ -139,6 +139,13 @@ class StreamlitApp:
             
         if "running" not in st.session_state:
             st.session_state.running = True
+            
+        # Server type selection for dynamic form handling
+        if "cluster_server_type" not in st.session_state:
+            st.session_state.cluster_server_type = "stdio"
+            
+        if "local_server_type" not in st.session_state:
+            st.session_state.local_server_type = "stdio"
     
     def run(self):
         """Run the Streamlit application."""
@@ -539,10 +546,22 @@ class StreamlitApp:
                         with server_tabs[1]:  # Add Server tab
                             st.subheader(f"Add MCP Server for Cluster: {selected_name}")
                             
+                            # Server type selection outside the form for immediate UI update
+                            server_type = st.selectbox(
+                                "Server Type", 
+                                ["stdio", "sse"],
+                                key=f"cluster_server_type_{selected_id}",
+                                index=0 if "cluster_server_type" not in st.session_state else 
+                                      ["stdio", "sse"].index(st.session_state.get("cluster_server_type", "stdio"))
+                            )
+                            
+                            # Store the selection for API calls
+                            st.session_state.cluster_server_type = server_type
+                            
                             with st.form(f"add_cluster_server_form_{selected_id}"):
                                 name = st.text_input("Server Name")
-                                server_type = st.selectbox("Server Type", ["stdio", "sse"])
                                 
+                                # Display different form fields based on server type
                                 if server_type == "stdio":
                                     command = st.text_input("Command")
                                     args_str = st.text_input("Arguments (comma-separated)")
@@ -588,7 +607,7 @@ class StreamlitApp:
                                                 server_id = AsyncToSync.run(
                                                     self.api_client.add_mcp_server(
                                                         name=name,
-                                                        server_type=server_type,
+                                                        server_type=st.session_state.cluster_server_type,
                                                         command=command,
                                                         args=args,
                                                         url=url,
@@ -1060,9 +1079,20 @@ class StreamlitApp:
         with add_tab:
             st.subheader("Add MCP Server")
             
+            # Server type selection outside the form for immediate UI update
+            server_type = st.selectbox(
+                "Server Type", 
+                ["stdio", "sse"],
+                key="local_server_type_selector",
+                index=0 if "local_server_type" not in st.session_state else 
+                      ["stdio", "sse"].index(st.session_state.get("local_server_type", "stdio"))
+            )
+            
+            # Store the selection for API calls
+            st.session_state.local_server_type = server_type
+            
             with st.form("add_server_form"):
                 name = st.text_input("Server Name")
-                server_type = st.selectbox("Server Type", ["stdio", "sse"])
                 
                 # Get all clusters for selection
                 clusters = AsyncToSync.run(self.api_client.get_clusters())
@@ -1074,14 +1104,23 @@ class StreamlitApp:
                     format_func=lambda x: x[1],
                 )
                 
+                # Display different form fields based on server type
                 if server_type == "stdio":
                     command = st.text_input("Command")
                     args_str = st.text_input("Arguments (comma-separated)")
                     url = None
-                else:
+                else:  # SSE type
                     command = None
                     args_str = None
-                    url = st.text_input("URL")
+                    
+                    # If a cluster is selected, default to its IP and port
+                    if cluster_id and cluster_id[0] is not None:
+                        selected_cluster_id = cluster_id[0]
+                        cluster = AsyncToSync.run(self.api_client.get_cluster(selected_cluster_id))
+                        default_url = f"http://{cluster['ip']}:{cluster['port']}/sse"
+                        url = st.text_input("URL", value=default_url)
+                    else:
+                        url = st.text_input("URL")
                 
                 # Force set is_local to True and disable the checkbox since we're on the Local MCP Servers page
                 is_local = True
@@ -1122,7 +1161,7 @@ class StreamlitApp:
                                 server_id = AsyncToSync.run(
                                     self.api_client.add_mcp_server(
                                         name=name,
-                                        server_type=server_type,
+                                        server_type=st.session_state.local_server_type,
                                         command=command,
                                         args=args,
                                         url=url,
