@@ -202,25 +202,106 @@ class ReactLoop:
                 response_text = match.group(1).strip()
                 print(response_text)
 
-            # Try to format the JSON before parsing it
-            formatted_json = response_text
             try:
-                # Try to parse and then re-format the JSON to ensure proper formatting
-                # This can fix minor JSON formatting issues like trailing commas, missing quotes, etc.
-                json_obj = json.loads(response_text.replace("'", '"').replace("\n", "").strip())
-                formatted_json = json.dumps(json_obj)
-                logger.info("Successfully formatted JSON")
-            except json.JSONDecodeError:
-                # If basic formatting failed, keep the original response
-                logger.info("Could not pre-format JSON, using original")
-                formatted_json = response_text
+                tool_call = json.loads(response_text)
 
-            try:
-                tool_call = json.loads(formatted_json)
+                if isinstance(tool_call, dict) and "tool" in tool_call and "parameters" in tool_call:
+                    # This is an MCP tool call
+                    tool_name = tool_call["tool"]
+                    tool_args = tool_call["parameters"]
+                    
+                    logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
+                    
+                    # Check for attempt_completion tool
+                    if tool_name == ATTEMPT_COMPLETION_TOOL_NAME:
+                        # This is a task completion signal
+                        logger.info("Detected attempt_completion tool call, completing task")
+                        
+                        # Get the completion result
+                        self.task_completed = True
+                        self.completion_result = tool_args.get("result", "Task completed successfully.")
+                        
+                        # Set the final response from the completion result
+                        final_response = self.completion_result
+                        
+                        # Add command execution logic if provided
+                        command = tool_args.get("command")
+                        if command:
+                            logger.info(f"Completion includes command to demonstrate result: {command}")
+                            # Note: In a real implementation, you might want to execute this command
+                            # or notify the UI to execute it
+                        
+                        # Log the completion
+                        tool_messages.append({
+                            "role": "assistant",
+                            "content": f"I've completed the task: {self.completion_result}"
+                        })
+                        
+                        # Break the loop as the task is complete
+                        break
+                    
+                    # Process regular MCP tool
+                    # Find the server for this tool
+                    server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
+                    
+                    if not server_name:
+                        tool_result = f"Error: Tool {tool_name} not found in any available server."
+                        logger.error(tool_result)
+                    else:
+                        # Execute the tool
+                        success, tool_result = await self.mcp_hub.execute_tool(
+                            server_name, tool_name, tool_args, chat_id
+                        )
+                        
+                        if not success:
+                            error_message = f"Error executing tool {tool_name}: {tool_result}"
+                            logger.error(error_message)
+                            
+                            # Create a more structured message that guides the LLM's decision
+                            decision_prompt = (
+                                f"A tool execution error occurred:\n"
+                                f"Tool: {tool_name}\n"
+                                f"Error: {tool_result}\n\n"
+                                f"Based on this error, you have two options:\n"
+                                f"1. CONTINUE: If you think this error is non-fatal and you can try an alternative approach\n"
+                                f"2. STOP: If you think this error prevents task completion and you should provide a final response\n\n"
+                                f"Respond with either:\n"
+                                f"- To continue: Explain your alternative approach and proceed with another tool call\n"
+                                f"- To stop: Use the attempt_completion tool with an explanation of why the task cannot be completed"
+                            )
+                            
+                            # Add to conversation history
+                            tool_messages.append({
+                                "role": "assistant",
+                                "content": response_text
+                            })
+                            
+                            tool_messages.append({
+                                "role": "user",
+                                "content": decision_prompt
+                            })
+                        else:
+                            logger.info("Call Tools result: {}".format(tool_result))
+
+                            # Add successful tool result to messages for context
+                            tool_messages.append({
+                                "role": "assistant",
+                                "content": response_text
+                            })
+                            
+                            tool_messages.append({
+                                "role": "user",
+                                "content": str(tool_result)
+                            })
+                    # Continue to next iteration
+                    continue
+                else:
+                    # Not a tool call, just a regular response
+                    final_response = response_text
+                    break
             except json.JSONDecodeError as e:
                 # Not JSON, just a regular response
                 logger.info(f"Response is not a JSON tool call: {str(e)}")
-                # Add tool result to messages for context
                 tool_messages.append({
                     "role": "assistant",
                     "content": response_text
@@ -228,106 +309,10 @@ class ReactLoop:
                 
                 tool_messages.append({
                     "role": "user",
-                    #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
-                    "content": str("your json has error, analysis and fix error, the JSON object must be formatted: " + str(e))
+                    "content": str("check whether complete the react loop, if so, call attempt_completion tool with final response")
                 })
-                continue
-
-            if isinstance(tool_call, dict) and "tool" in tool_call and "parameters" in tool_call:
-                # This is an MCP tool call
-                tool_name = tool_call["tool"]
-                tool_args = tool_call["parameters"]
-                
-                logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
-                
-                # Check for attempt_completion tool
-                if tool_name == ATTEMPT_COMPLETION_TOOL_NAME:
-                    # This is a task completion signal
-                    logger.info("Detected attempt_completion tool call, completing task")
-                    
-                    # Get the completion result
-                    self.task_completed = True
-                    self.completion_result = tool_args.get("result", "Task completed successfully.")
-                    
-                    # Set the final response from the completion result
-                    final_response = self.completion_result
-                    
-                    # Add command execution logic if provided
-                    command = tool_args.get("command")
-                    if command:
-                        logger.info(f"Completion includes command to demonstrate result: {command}")
-                        # Note: In a real implementation, you might want to execute this command
-                        # or notify the UI to execute it
-                    
-                    # Log the completion
-                    tool_messages.append({
-                        "role": "assistant",
-                        "content": f"I've completed the task: {self.completion_result}"
-                    })
-                    
-                    # Break the loop as the task is complete
-                    break
-                
-                # Process regular MCP tool
-                # Find the server for this tool
-                server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
-                
-                if not server_name:
-                    tool_result = f"Error: Tool {tool_name} not found in any available server."
-                    logger.error(tool_result)
-                else:
-                    # Execute the tool
-                    success, tool_result = await self.mcp_hub.execute_tool(
-                        server_name, tool_name, tool_args, chat_id
-                    )
-                    
-                    if not success:
-                        error_message = f"Error executing tool {tool_name}: {tool_result}"
-                        logger.error(error_message)
-                        
-                        # Create a more structured message that guides the LLM's decision
-                        decision_prompt = (
-                            f"A tool execution error occurred:\n"
-                            f"Tool: {tool_name}\n"
-                            f"Error: {tool_result}\n\n"
-                            f"Based on this error, you have two options:\n"
-                            f"1. CONTINUE: If you think this error is non-fatal and you can try an alternative approach\n"
-                            f"2. STOP: If you think this error prevents task completion and you should provide a final response\n\n"
-                            f"Respond with either:\n"
-                            f"- To continue: Explain your alternative approach and proceed with another tool call\n"
-                            f"- To stop: Use the attempt_completion tool with an explanation of why the task cannot be completed"
-                        )
-                        
-                        # Add to conversation history
-                        tool_messages.append({
-                            "role": "assistant",
-                            "content": response_text
-                        })
-                        
-                        tool_messages.append({
-                            "role": "user",
-                            "content": decision_prompt
-                        })
-                    else:
-                        logger.info("Call Tools result: {}".format(tool_result))
-
-                        # Add successful tool result to messages for context
-                        tool_messages.append({
-                            "role": "assistant",
-                            "content": response_text
-                        })
-                        
-                        tool_messages.append({
-                            "role": "user",
-                            "content": str(tool_result)
-                        })
-                
-                # Continue to next iteration
-                continue
-            else:
-                # Not a tool call, just a regular response
                 final_response = response_text
-                break
+                continue
 
             # If we've reached the max iterations, generate a final response
             if iteration == self.max_iterations:

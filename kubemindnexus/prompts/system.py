@@ -50,6 +50,19 @@ When working on tasks, follow this reasoning and acting process:
      the issues encountered and provide any partial results or alternative suggestions
    - Be specific about why an error occurred and how it impacts the overall task
 
+6. TASK COMPLETION: Signal when the task is complete
+   - Use the attempt_completion tool ONLY after confirming all previous tool uses were successful
+   - Before using attempt_completion, verify that you've received user confirmation for all previous actions
+   - Failure to confirm previous tool successes could result in code corruption or system failure
+   - Formulate your final result in a way that is complete and doesn't require further input
+   - Don't end your result with questions or offers for further assistance
+   - If providing a demonstration command, ensure it's properly formatted and appropriate for the user's system
+
+7. FINAL RESPONSE: Provide a clear and concise response
+   - Summarize what was accomplished
+   - Present the results in a user-friendly format
+   - Include any relevant next steps or considerations
+
 This iterative process ensures thorough analysis and effective problem-solving for Kubernetes management tasks.
 """
 
@@ -149,7 +162,11 @@ Choose the appropriate tool based on the user's question.
     - If no tool is needed, reply directly.
     - If cannot find the parameters from current context, ask user for more information. 
 IMPORTANT: When you need to use a tool, you must ONLY respond with
-the exact formated JSON object format below, nothing else, << the JSON object must be formatted >>:\n
+the exact formated JSON object format below, nothing else.
+- DO NOT response JSON data in just one line
+- the JSON object must be formatted
+
+<<Call tools example 1>>:\n
 
 {
   "server": "server_name",  // Must include the exact server name from the tool description
@@ -158,6 +175,30 @@ the exact formated JSON object format below, nothing else, << the JSON object mu
     "param1": "value1",
     "param2": "value2",
     "param3": "",
+  }
+}
+
+<<Call tools example 2: call tool of command_execute>>:\n
+
+{
+  "server": "lcu23",
+  "tool": "command_execute",
+  "parameters": {
+    "command": "/tmp/hello.sh",
+    "cwd": "/tmp",
+    "capture_output": true
+  }
+}
+
+<<Call tools example 3: call tool of command_execute>>:\n
+
+{
+  "server": "lcu23",
+  "tool": "command_execute",
+  "parameters": {
+    "command": "chmod +x /tmp/hello.sh",
+    "cwd": "/tmp",
+    "capture_output": true
   }
 }
 
@@ -181,7 +222,7 @@ When calling MCP tools, you MUST strictly follow these rules:\n
     - Do NOT include any reasoning or thought process\n
     - Do NOT respond with any other text, just the formated JSON object\n
     - If you want to return none property in formated JSON, just return "", Do NOT use 'None'\n
-    - All of JSON object should be show pretty format when response to user.\n
+    - DO NOT response JSON in one line, adding '\\n' tag at each end of line.\n
 """
 
 def generate_system_prompt(
@@ -212,8 +253,8 @@ def generate_system_prompt(
     if include_react_guidance:
         prompt_parts.append(get_react_loop_guidance())
     
-    if include_mcp_guidance:
-        prompt_parts.append(get_mcp_integration_guidance())
+    #if include_mcp_guidance:
+    #    prompt_parts.append(get_mcp_integration_guidance())
     
     # Add Kubernetes guidance and response guidelines
     prompt_parts.append(get_kubernetes_guidance())
@@ -301,6 +342,7 @@ def generate_tool_format(
                 
                 # Format tool description
                 tool_desc = [f"\nTool: {name}"]
+                tool_desc.append(f"Server: {section_title}")
                 tool_desc.append(f"Description: {description}")
                 
                 if input_params:
