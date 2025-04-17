@@ -132,7 +132,7 @@ class ReactLoop:
                     include_mcp_guidance=include_mcp_guidance,
                     include_react_guidance=include_react_guidance
                 )
-                logger.info("Using enhanced modular system prompt {}".format(system_prompt))
+                logger.info("Using enhanced modular system prompt")
             except Exception as e:
                 # Fall back to the legacy template if there's an error
                 logger.warning(f"Error generating enhanced system prompt, falling back to legacy: {str(e)}")
@@ -186,6 +186,8 @@ class ReactLoop:
             response_text, _ = await self.llm.generate(
                 current_messages, system_prompt
             )
+
+            logger.info(f"LLM Response: {response_text}")
             
             # Check if response_text is a JSON MCP tool call
             try:
@@ -196,6 +198,49 @@ class ReactLoop:
                     response_text = match.group(1).strip()
                     print(response_text)
 
+            # Translate tool format if needed
+                def translate_tool_format(text):
+                    """
+                    Translate from simple format to nested JSON if the first line is a tool name.
+
+                    FROM:
+                    filesystem_list_directory
+                    {"path": "/home"}
+
+                    TO:
+                    {
+                    "tool": "filesystem_list_directory",
+                    "parameters": {
+                        "path": "/home"
+                    }
+                    }
+                    """
+                    lines = text.strip().split('\n', 1)
+                    if len(lines) < 2:
+                        return text
+
+                    potential_tool_name = lines[0].strip()
+                    potential_params = lines[1].strip()
+
+                    # Check if first line looks like a tool name (no spaces, no JSON characters)
+                    if ' ' in potential_tool_name or '{' in potential_tool_name or '}' in potential_tool_name:
+                        return text
+
+                    # Try to parse the second part as JSON
+                    try:
+                        params = json.loads(potential_params)
+                        # Create the new format
+                        transformed = {
+                            "tool": potential_tool_name,
+                            "parameters": params
+                        }
+                        return json.dumps(transformed)
+                    except json.JSONDecodeError:
+                        return text
+
+                # Apply translation if needed
+                response_text = translate_tool_format(response_text)
+
                 tool_call = json.loads(response_text)
                 if isinstance(tool_call, dict) and "tool" in tool_call and "parameters" in tool_call:
                     # This is an MCP tool call
@@ -205,7 +250,8 @@ class ReactLoop:
                     logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
                     
                     # Find the server for this tool
-                    server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
+                    # server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
+                    server_name = self.mcp_hub.find_server_for_tool(tool_name)
                     
                     if not server_name:
                         tool_result = f"Error: Tool {tool_name} not found in any available server."
@@ -219,7 +265,8 @@ class ReactLoop:
                         if not success:
                             tool_result = f"Error executing tool {tool_name}: {tool_result}"
                             logger.error(tool_result)
-                    
+                        logger.info("Call tool result: " + str(tool_result))
+
                     # Add tool result to messages for context
                     tool_messages.append({
                         "role": "assistant",
