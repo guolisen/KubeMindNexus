@@ -144,7 +144,6 @@ IMPORTANT: When you need to use a tool, you must ONLY respond with
 the exact JSON object format below, nothing else:\n
 
 {
-  "server": "server_name",  // Must include the exact server name from the tool description
   "tool": "tool_name",      // Must be the exact tool name from the description
   "parameters": {
     "param1": "value1",
@@ -255,7 +254,8 @@ def generate_tool_format(
     if cluster_context and cluster_servers:
         sections.append(f"## ACTIVE CLUSTER: {cluster_context}")
         for server_name, tools in cluster_servers.items():
-            section_title = f"Server: {server_name}"
+            #section_title = f"Server: {server_name}"
+            section_title = f""
             tool_descriptions = []
             
             for tool in tools:
@@ -294,7 +294,8 @@ def generate_tool_format(
     if local_servers:
         sections.append(f"\n## LOCAL TOOLS")
         for server_name, tools in local_servers.items():
-            section_title = f"Server: {server_name}"
+            #section_title = f"Server: {server_name}"
+            section_title = f""
             tool_descriptions = []
             
             for tool in tools:
@@ -333,7 +334,8 @@ def generate_tool_format(
     if other_servers:
         sections.append(f"\n## OTHER TOOLS")
         for server_name, tools in other_servers.items():
-            section_title = f"Server: {server_name}"
+            #section_title = f"Server: {server_name}"
+            section_title = f""
             tool_descriptions = []
             
             for tool in tools:

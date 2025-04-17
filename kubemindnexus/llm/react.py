@@ -92,12 +92,15 @@ class ReactLoop:
         
         # Convert tools to prepare for LLM
         # For some models we need to map between inputSchema and parameters
+        server_tools_map = {}
         for server_name, server_tools in cluster_tools.items():
             for tool in server_tools:
+                server_tools_map[tool["name"]] = server_name
                 if "inputSchema" not in tool and "parameters" in tool:
                     tool["inputSchema"] = tool["parameters"]
         for server_name, server_tools in local_tools.items():
             for tool in server_tools:
+                server_tools_map[tool["name"]] = server_name
                 if "inputSchema" not in tool and "parameters" in tool:
                     tool["inputSchema"] = tool["parameters"]
        
@@ -251,7 +254,8 @@ class ReactLoop:
                     
                     # Find the server for this tool
                     # server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
-                    server_name = self.mcp_hub.find_server_for_tool(tool_name)
+                    # server_name = self.mcp_hub.find_server_for_tool(tool_name)
+                    server_name = server_tools_map.get(tool_name)
                     
                     if not server_name:
                         tool_result = f"Error: Tool {tool_name} not found in any available server."
