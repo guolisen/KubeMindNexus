@@ -18,6 +18,16 @@ The application connects to multiple clusters and their associated MCP servers, 
 - **Performance Monitoring**: Visual representations of cluster metrics
 - **Configurable**: Easily extensible with new MCP servers and LLM providers
 
+## Examples
+### Ex.1
+![ex1](./docs/images/ex1.png)
+
+### Ex.2
+![ex2](./docs/images/ex2.png)
+
+### Ex.3
+![ex3](./docs/images/ex3.png)
+
 ## Architecture
 
 KubeMindNexus consists of:

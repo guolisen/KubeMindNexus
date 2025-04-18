@@ -43,6 +43,30 @@ When working on tasks, follow this reasoning and acting process:
    - Plan additional actions if needed
    - Prepare a clear response based on all information gathered
 
+5. ERROR HANDLING: Respond appropriately to tool execution errors
+   - When a tool execution fails, analyze whether the error is fatal to task completion
+   - For non-fatal errors, propose alternative approaches or tools to achieve the goal
+   - For fatal errors that prevent task completion, use the attempt_completion tool to explain
+     the issues encountered and provide any partial results or alternative suggestions
+   - Be specific about why an error occurred and how it impacts the overall task
+
+6. TASK COMPLETION: Signal when the task is complete
+   - Use the attempt_completion tool ONLY after confirming all previous tool uses were successful
+   - Before using attempt_completion, verify that you've received user confirmation for all previous actions
+   - Failure to confirm previous tool successes could result in code corruption or system failure
+   - Formulate your final result in a way that is complete and doesn't require further input
+   - Don't end your result with questions or offers for further assistance
+   - If providing a demonstration command, ensure it's properly formatted and appropriate for the user's system
+
+7. FINAL RESPONSE: Provide a clear and concise response
+   - Summarize what was accomplished
+   - Present the results in a user-friendly format
+   - Include any relevant next steps or considerations
+
+<< MUST IMPORTANT NOTICE >>
+    - Each step in the ReAct process must be only run one tool at a time
+    - Each LLM response must be only run one tool at a time
+   
 This iterative process ensures thorough analysis and effective problem-solving for Kubernetes management tasks.
 """
 
@@ -142,8 +166,10 @@ Choose the appropriate tool based on the user's question.
     - If no tool is needed, reply directly.
     - If cannot find the parameters from current context, ask user for more information. 
 IMPORTANT: When you need to use a tool, you must ONLY respond with
-the exact JSON object format below, nothing else:\n
+the exact formated JSON object format below, nothing else.
+- the tools name is a property of the JSON object. DO NOT set the tool name outside the JSON object.
 
+Example 1:
 {
   "tool": "tool_name",      // Must be the exact tool name from the description
   "parameters": {
@@ -153,9 +179,49 @@ the exact JSON object format below, nothing else:\n
   }
 }
 
+Example 2:
+{
+  "server": "lcu23",
+  "tool": "command_execute",
+  "parameters": {
+    "command": "/tmp/hello.sh",
+    "cwd": "/tmp",
+    "capture_output": true
+  }
+}
+
+Example 3:
+{
+  "server": "lcu23",
+  "tool": "command_execute",
+  "parameters": {
+    "command": "chmod +x /tmp/hello.sh",
+    "cwd": "/tmp",
+    "capture_output": true
+  }
+}
+
+
+WRONG JSON Example 4:\n
+
+command_execute
+{"command": "chmod +x /tmp/hello.sh", "cwd": "/tmp", "capture_output": true}
+
+
 Note that the server name is critical - it must be the exact server name 
 from either the ACTIVE CLUSTER section or LOCAL TOOLS section of the available tools.
 This ensures the API server can correctly route your request to the appropriate MCP server.
+
+*<<TOOL USAGE GUIDELINES>>*\n
+*<< MUST IMPORTANT NOTICE >>*:\n
+When calling MCP tools, you MUST strictly follow these rules:\n
+    - Each LLM response must be only run one tool at a time
+    - DO NOT set the tool name outside the JSON object. 
+    - !! Return ONLY a valid JSON object formatted as a tool call request !!\n
+    - !! Absolutely NO explanations, comments, or extra text !!\n
+    - Do NOT include any reasoning or thought process\n
+    - Do NOT respond with any other text, just the formated JSON object, all of message should be in formated JSON\n
+    - If you want to return none property in formated JSON, just return "", Do NOT use 'None'\n
 
 *<< IMPORTANT AFTER RECEIVING A TOOL'S RESPONSE >>*:\n
 When you receive a tool's response, follow these steps:\n
@@ -209,7 +275,7 @@ def generate_system_prompt(
         prompt_parts.append(get_mcp_integration_guidance())
     
     # Add Kubernetes guidance and response guidelines
-    prompt_parts.append(get_kubernetes_guidance())
+    #prompt_parts.append(get_kubernetes_guidance())
     #prompt_parts.append(get_response_guidelines())
     prompt_parts.append("\n=============\n")
     
@@ -232,6 +298,78 @@ def generate_system_prompt(
 
     # Combine all sections
     return "\n\n".join(prompt_parts)
+
+
+def _create_example_json(server_name: str, tool_name: str, properties: Dict[str, Any], required: List[str]) -> str:
+    """Create a JSON example for a tool based on its properties.
+    
+    Args:
+        server_name: Name of the server providing the tool.
+        tool_name: Name of the tool.
+        properties: Dictionary of tool parameters and their schemas.
+        required: List of required parameter names.
+        
+    Returns:
+        Formatted JSON example as a string.
+    """
+    # Create parameters with example values based on their types
+    params = {}
+    for param_name, param_info in properties.items():
+        param_type = param_info.get("type", "string")
+        
+        # Generate appropriate example value based on type
+        if param_type == "string":
+            # Use enum value if available, otherwise generic example
+            if "enum" in param_info and param_info["enum"]:
+                params[param_name] = param_info["enum"][0]
+            else:
+                params[param_name] = f"example_{param_name}"
+        elif param_type == "integer" or param_type == "number":
+            params[param_name] = 42
+        elif param_type == "boolean":
+            params[param_name] = True
+        elif param_type == "array":
+            params[param_name] = ["item1", "item2"]
+        elif param_type == "object":
+            params[param_name] = {"key": "value"}
+        else:
+            params[param_name] = "example_value"
+    
+    # Format the JSON example with proper indentation
+    example = {
+        "server": server_name,
+        "tool": tool_name,
+        "parameters": params
+    }
+    
+    # Format the JSON as a string with indentation
+    json_lines = [
+        "{",
+        f'  "server": "{server_name}",',
+        f'  "tool": "{tool_name}",',
+        '  "parameters": {'
+    ]
+    
+    # Add parameters
+    param_lines = []
+    for param_name, param_value in params.items():
+        if isinstance(param_value, str):
+            param_lines.append(f'    "{param_name}": "{param_value}"')
+        elif isinstance(param_value, bool):
+            param_lines.append(f'    "{param_name}": {str(param_value).lower()}')
+        else:
+            param_lines.append(f'    "{param_name}": {param_value}')
+    
+    # Join parameters with commas
+    json_lines.extend([f"{line}," for line in param_lines[:-1]])
+    if param_lines:
+        json_lines.append(param_lines[-1])
+    
+    # Close the JSON
+    json_lines.append("  }")
+    json_lines.append("}")
+    
+    return "\n".join(json_lines)
 
 
 def generate_tool_format(
@@ -295,11 +433,17 @@ def generate_tool_format(
                 
                 # Format tool description
                 tool_desc = [f"\nTool: {name}"]
+                tool_desc.append(f"{section_title}")
                 tool_desc.append(f"Description: {description}")
                 
                 if input_params:
                     tool_desc.append("Arguments:")
                     tool_desc.extend(input_params)
+                
+                # Add JSON example
+                #example_json = _create_example_json(server_name, name, properties, required)
+                #tool_desc.append("\nExample Usage:")
+                #tool_desc.append(example_json)
                 
                 tool_descriptions.append("\n".join(tool_desc))
             
@@ -335,11 +479,17 @@ def generate_tool_format(
                 
                 # Format tool description
                 tool_desc = [f"\nTool: {name}"]
+                tool_desc.append(f"{section_title}")
                 tool_desc.append(f"Description: {description}")
                 
                 if input_params:
                     tool_desc.append("Arguments:")
                     tool_desc.extend(input_params)
+                
+                # Add JSON example
+                example_json = _create_example_json(server_name, name, properties, required)
+                tool_desc.append("\nExample Usage:")
+                tool_desc.append(example_json)
                 
                 tool_descriptions.append("\n".join(tool_desc))
             
@@ -375,11 +525,17 @@ def generate_tool_format(
                 
                 # Format tool description
                 tool_desc = [f"\nTool: {name}"]
+                tool_desc.append(f"{section_title}")
                 tool_desc.append(f"Description: {description}")
                 
                 if input_params:
                     tool_desc.append("Arguments:")
                     tool_desc.extend(input_params)
+                
+                # Add JSON example
+                example_json = _create_example_json(server_name, name, properties, required)
+                tool_desc.append("\nExample Usage:")
+                tool_desc.append(example_json)
                 
                 tool_descriptions.append("\n".join(tool_desc))
             
