@@ -243,8 +243,13 @@ class ReactLoop:
             # Apply translation if needed
             response_text = translate_tool_format(response_text)
             
+            logger.info(f"Translated response: {response_text}")
+
             try:
                 tool_call = json.loads(response_text)
+
+                if 'parameters' not in tool_call:
+                    tool_call['parameters'] = {}
 
                 if isinstance(tool_call, dict) and "tool" in tool_call and "parameters" in tool_call:
                     # This is an MCP tool call
@@ -289,24 +294,8 @@ class ReactLoop:
 
                     # If server_name is None, try to search tool name in mcp_hub
                     if not server_name:
-                        server_name = self.mcp_hub.find_server_for_tool(tool_name)
-                        if server_name:
-                            logger.info(f"Found server {server_name} for tool {tool_name} via mcp_hub search")
-                        else:
-                            tool_result = f"Error: Tool {tool_name} not found in any available server."
-                            logger.error(tool_result)
-                            
-                            # Add to conversation history
-                            tool_messages.append({
-                                "role": "assistant",
-                                "content": response_text
-                            })
-                            
-                            tool_messages.append({
-                                "role": "user",
-                                "content": tool_result
-                            })
-                            continue
+                        tool_result = f"Error: Tool {tool_name} not found in any available server."
+                        logger.error(tool_result)
                     # Execute the tool if we have a valid server_name
                     else:
                         success, tool_result = await self.mcp_hub.execute_tool(
@@ -327,7 +316,7 @@ class ReactLoop:
                     tool_messages.append({
                         "role": "user",
                         #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
-                        "content": str(tool_result)
+                        "content": str("Check the result of tool and previous user query to descide whether to finish the react loop and call attempt_completion tool to stop the task. Call tool result: " + tool_result)
                     })
                     
                     # Continue to next iteration
@@ -340,16 +329,10 @@ class ReactLoop:
                 # Not JSON, just a regular response
                 logger.info(f"Response is not a JSON tool call: {str(e)}")
 
-                # Add tool result to messages for context
-                tool_messages.append({
-                    "role": "assistant",
-                    "content": response_text
-                })
-                
                 tool_messages.append({
                     "role": "user",
                     #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
-                    "content": str("your json has error, analysis and fix error, the JSON object must be formatted: " + str(e))
+                    "content": str(response_text)
                 })
                 continue
 

@@ -23,6 +23,15 @@ REASONING AND ACTING (ReAct) PROCESS
 
 When working on tasks, follow this reasoning and acting process:
 
+0. TASK COMPLETION: Signal when the task is complete
+   - **If you have completed all steps in the ReAct process, call the attempt_completion tool**
+   - Use the attempt_completion tool ONLY after confirming all previous tool uses were successful
+   - Before using attempt_completion, verify that you've received user confirmation for all previous actions
+   - Failure to confirm previous tool successes could result in code corruption or system failure
+   - Formulate your final result in a way that is complete and doesn't require further input
+   - Don't end your result with questions or offers for further assistance
+   - If providing a demonstration command, ensure it's properly formatted and appropriate for the user's system
+
 1. REASONING: Analyze the user's request and current context
    - Understand what information you have and what you need
    - Break down complex tasks into smaller steps
@@ -50,15 +59,7 @@ When working on tasks, follow this reasoning and acting process:
      the issues encountered and provide any partial results or alternative suggestions
    - Be specific about why an error occurred and how it impacts the overall task
 
-6. TASK COMPLETION: Signal when the task is complete
-   - Use the attempt_completion tool ONLY after confirming all previous tool uses were successful
-   - Before using attempt_completion, verify that you've received user confirmation for all previous actions
-   - Failure to confirm previous tool successes could result in code corruption or system failure
-   - Formulate your final result in a way that is complete and doesn't require further input
-   - Don't end your result with questions or offers for further assistance
-   - If providing a demonstration command, ensure it's properly formatted and appropriate for the user's system
-
-7. FINAL RESPONSE: Provide a clear and concise response
+6. FINAL RESPONSE: Provide a clear and concise response
    - Summarize what was accomplished
    - Present the results in a user-friendly format
    - Include any relevant next steps or considerations
@@ -166,10 +167,8 @@ Choose the appropriate tool based on the user's question.
     - If no tool is needed, reply directly.
     - If cannot find the parameters from current context, ask user for more information. 
 IMPORTANT: When you need to use a tool, you must ONLY respond with
-the exact formated JSON object format below, nothing else.
-- the tools name is a property of the JSON object. DO NOT set the tool name outside the JSON object.
+the exact JSON object format below, nothing else.
 
-Example 1:
 {
   "tool": "tool_name",      // Must be the exact tool name from the description
   "parameters": {
@@ -178,35 +177,6 @@ Example 1:
     "param3": "",
   }
 }
-
-Example 2:
-{
-  "server": "lcu23",
-  "tool": "command_execute",
-  "parameters": {
-    "command": "/tmp/hello.sh",
-    "cwd": "/tmp",
-    "capture_output": true
-  }
-}
-
-Example 3:
-{
-  "server": "lcu23",
-  "tool": "command_execute",
-  "parameters": {
-    "command": "chmod +x /tmp/hello.sh",
-    "cwd": "/tmp",
-    "capture_output": true
-  }
-}
-
-
-WRONG JSON Example 4:\n
-
-command_execute
-{"command": "chmod +x /tmp/hello.sh", "cwd": "/tmp", "capture_output": true}
-
 
 Note that the server name is critical - it must be the exact server name 
 from either the ACTIVE CLUSTER section or LOCAL TOOLS section of the available tools.
@@ -230,17 +200,16 @@ When you receive a tool's response, follow these steps:\n
 3. Focus on the most relevant information\n
 4. Use appropriate context from the user's question\n
 5. Avoid simply repeating the raw data\n
-6. If no need to call tools, summerize all of message and give the final response according to user's query\n
+6. If no need to call tools, summerize all of message and give the final response according to user's query\n\n
 
-*<<TOOL USAGE GUIDELINES>>*
-*<< MUST IMPORTANT NOTICE >>*:
-When calling MCP tools, you MUST strictly follow these rules:
-    - Return ONLY a valid JSON object formatted as a tool call request
-    - Absolutely NO explanations, comments, or extra text
-    - Do NOT include any reasoning or thought process
-    - Do NOT respond with any other text, just the JSON object\n\n
-    - If you want to return none property in JSON, just return "", Do NOT use 'None'
-    - All of JSON object should be formated when response to user.
+*<<TOOL USAGE GUIDELINES>>*\n
+*<< MUST IMPORTANT NOTICE >>*:\n
+When calling MCP tools, you MUST strictly follow these rules:\n
+    - Return ONLY a valid JSON object formatted as a tool call request\n
+    - Absolutely NO explanations, comments, or extra text\n
+    - Do NOT include any reasoning or thought process\n
+    - Do NOT respond with any other text, just the JSON object\n
+    - If you want to return none property in JSON, just return "", Do NOT use 'None'\n
 """
 
 def generate_system_prompt(
@@ -278,11 +247,13 @@ def generate_system_prompt(
     #prompt_parts.append(get_kubernetes_guidance())
     #prompt_parts.append(get_response_guidelines())
     prompt_parts.append("\n=============\n")
-    
+    prompt_parts.append(get_tool_usage_guidance())
+
+    prompt_parts.append("\n=============\n")
     # Add attempt_completion tool to available tools
     attempt_completion_tool = get_attempt_completion_tool()
-    available_tools_with_completion = available_tools
-    available_tools_with_completion += "\n\n## TASK COMPLETION TOOLS\n"
+    available_tools_with_completion = ""
+    available_tools_with_completion += "\n\n\n"
     available_tools_with_completion += f"\nTool: {attempt_completion_tool['name']}\n"
     available_tools_with_completion += f"Description: {attempt_completion_tool['description']}\n"
     
@@ -292,9 +263,11 @@ def generate_system_prompt(
         req_marker = " (required)" if param_name in attempt_completion_tool['inputSchema']['required'] else ""
         available_tools_with_completion += f"- {param_name}: {param_info['description']}{req_marker}\n"
     
+    available_tools_with_completion = available_tools
+
     # Add tool usage guidance
     prompt_parts.append("AVAILABLE TOOLS:\n" + available_tools_with_completion)
-    prompt_parts.append(get_tool_usage_guidance())
+
 
     # Combine all sections
     return "\n\n".join(prompt_parts)
