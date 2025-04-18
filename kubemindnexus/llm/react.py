@@ -245,6 +245,9 @@ class ReactLoop:
                 response_text = translate_tool_format(response_text)
 
                 tool_call = json.loads(response_text)
+                if 'parameters' not in tool_call:
+                    tool_call['parameters'] = {}
+
                 if isinstance(tool_call, dict) and "tool" in tool_call and "parameters" in tool_call:
                     # This is an MCP tool call
                     tool_name = tool_call["tool"]
