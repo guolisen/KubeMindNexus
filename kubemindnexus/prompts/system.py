@@ -234,14 +234,14 @@ def generate_system_prompt(
     
     # Add cluster context if provided
     #if cluster_context:
-    prompt_parts.append(f"CURRENT CLUSTER CONTEXT\n\n{cluster_context}")
+    # prompt_parts.append(f"CURRENT CLUSTER CONTEXT\n\n{cluster_context}")
     
     # Add optional sections
     if include_react_guidance:
         prompt_parts.append(get_react_loop_guidance())
     
-    if include_mcp_guidance:
-        prompt_parts.append(get_mcp_integration_guidance())
+    #if include_mcp_guidance:
+    #    prompt_parts.append(get_mcp_integration_guidance())
     
     # Add Kubernetes guidance and response guidelines
     #prompt_parts.append(get_kubernetes_guidance())
