@@ -171,7 +171,6 @@ the exact formated JSON object format below, nothing else.
 
 Example 1:
 {
-  "server": "server_name",  // Must include the exact server name from the tool description
   "tool": "tool_name",      // Must be the exact tool name from the description
   "parameters": {
     "param1": "value1",
@@ -231,6 +230,17 @@ When you receive a tool's response, follow these steps:\n
 3. Focus on the most relevant information\n
 4. Use appropriate context from the user's question\n
 5. Avoid simply repeating the raw data\n
+6. If no need to call tools, summerize all of message and give the final response according to user's query\n
+
+*<<TOOL USAGE GUIDELINES>>*
+*<< MUST IMPORTANT NOTICE >>*:
+When calling MCP tools, you MUST strictly follow these rules:
+    - Return ONLY a valid JSON object formatted as a tool call request
+    - Absolutely NO explanations, comments, or extra text
+    - Do NOT include any reasoning or thought process
+    - Do NOT respond with any other text, just the JSON object\n\n
+    - If you want to return none property in JSON, just return "", Do NOT use 'None'
+    - All of JSON object should be formated when response to user.
 """
 
 def generate_system_prompt(
@@ -399,7 +409,8 @@ def generate_tool_format(
     if cluster_context and cluster_servers:
         sections.append(f"## ACTIVE CLUSTER: {cluster_context}")
         for server_name, tools in cluster_servers.items():
-            section_title = f"Server: {server_name}"
+            #section_title = f"Server: {server_name}"
+            section_title = f""
             tool_descriptions = []
             
             for tool in tools:
@@ -444,7 +455,8 @@ def generate_tool_format(
     if local_servers:
         sections.append(f"\n## LOCAL TOOLS")
         for server_name, tools in local_servers.items():
-            section_title = f"Server: {server_name}"
+            #section_title = f"Server: {server_name}"
+            section_title = f""
             tool_descriptions = []
             
             for tool in tools:
@@ -489,7 +501,8 @@ def generate_tool_format(
     if other_servers:
         sections.append(f"\n## OTHER TOOLS")
         for server_name, tools in other_servers.items():
-            section_title = f"Server: {server_name}"
+            #section_title = f"Server: {server_name}"
+            section_title = f""
             tool_descriptions = []
             
             for tool in tools:

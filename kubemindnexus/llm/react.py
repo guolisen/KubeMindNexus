@@ -97,12 +97,15 @@ class ReactLoop:
         
         # Convert tools to prepare for LLM
         # For some models we need to map between inputSchema and parameters
+        server_tools_map = {}
         for server_name, server_tools in cluster_tools.items():
             for tool in server_tools:
+                server_tools_map[tool["name"]] = server_name
                 if "inputSchema" not in tool and "parameters" in tool:
                     tool["inputSchema"] = tool["parameters"]
         for server_name, server_tools in local_tools.items():
             for tool in server_tools:
+                server_tools_map[tool["name"]] = server_name
                 if "inputSchema" not in tool and "parameters" in tool:
                     tool["inputSchema"] = tool["parameters"]
        
@@ -191,10 +194,13 @@ class ReactLoop:
             response_text, _ = await self.llm.generate(
                 current_messages, system_prompt
             )
+
+            logger.info(f"LLM Response: {response_text}")
             
             logger.info("Receive LLM response: {}".format(response_text))
 
             # Translate tool format if needed
+
             def translate_tool_format(text):
                 """
                 Translate from simple format to nested JSON if the first line is a tool name.
@@ -247,6 +253,7 @@ class ReactLoop:
                     
                     logger.info(f"Executing MCP tool: {tool_name} with args: {tool_args}")
                     
+
                     # Check for attempt_completion tool
                     if tool_name == ATTEMPT_COMPLETION_TOOL_NAME:
                         # This is a task completion signal
@@ -274,11 +281,12 @@ class ReactLoop:
                         
                         # Break the loop as the task is complete
                         break
-                    
-                    # Process regular MCP tool
+                
                     # Find the server for this tool
-                    server_name = tool_call.get("server")
-                    
+                    # server_name = tool_call["server"] #self.mcp_hub.find_server_for_tool(tool_name)
+                    # server_name = self.mcp_hub.find_server_for_tool(tool_name)
+                    server_name = server_tools_map.get(tool_name)
+
                     # If server_name is None, try to search tool name in mcp_hub
                     if not server_name:
                         server_name = self.mcp_hub.find_server_for_tool(tool_name)
@@ -299,53 +307,29 @@ class ReactLoop:
                                 "content": tool_result
                             })
                             continue
-                    
                     # Execute the tool if we have a valid server_name
-                    if server_name:
+                    else:
                         success, tool_result = await self.mcp_hub.execute_tool(
                             server_name, tool_name, tool_args, chat_id
                         )
                         
                         if not success:
-                            error_message = f"Error executing tool {tool_name}: {tool_result}"
-                            logger.error(error_message)
-                            
-                            # Create a more structured message that guides the LLM's decision
-                            decision_prompt = (
-                                f"A tool execution error occurred:\n"
-                                f"Tool: {tool_name}\n"
-                                f"Error: {tool_result}\n\n"
-                                f"Based on this error, you have two options:\n"
-                                f"1. CONTINUE: If you think this error is non-fatal and you can try an alternative approach\n"
-                                f"2. STOP: If you think this error prevents task completion and you should provide a final response\n\n"
-                                f"Respond with either:\n"
-                                f"- To continue: Explain your alternative approach and proceed with another tool call\n"
-                                f"- To stop: Use the attempt_completion tool with an explanation of why the task cannot be completed"
-                            )
-                            
-                            # Add to conversation history
-                            tool_messages.append({
-                                "role": "assistant",
-                                "content": response_text
-                            })
-                            
-                            tool_messages.append({
-                                "role": "user",
-                                "content": decision_prompt
-                            })
-                        else:
-                            logger.info("Call Tools result: {}".format(tool_result))
+                            tool_result = f"Error executing tool {tool_name}: {tool_result}"
+                            logger.error(tool_result)
+                        logger.info("Call tool result: " + str(tool_result))
 
-                            # Add successful tool result to messages for context
-                            tool_messages.append({
-                                "role": "assistant",
-                                "content": response_text
-                            })
-                            
-                            tool_messages.append({
-                                "role": "user",
-                                "content": str(tool_result)
-                            })
+                    # Add tool result to messages for context
+                    tool_messages.append({
+                        "role": "assistant",
+                        "content": response_text
+                    })
+                    
+                    tool_messages.append({
+                        "role": "user",
+                        #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
+                        "content": str(tool_result)
+                    })
+                    
                     # Continue to next iteration
                     continue
                 else:
@@ -355,6 +339,8 @@ class ReactLoop:
             except json.JSONDecodeError as e:
                 # Not JSON, just a regular response
                 logger.info(f"Response is not a JSON tool call: {str(e)}")
+
+                # Add tool result to messages for context
                 tool_messages.append({
                     "role": "assistant",
                     "content": response_text
@@ -362,9 +348,9 @@ class ReactLoop:
                 
                 tool_messages.append({
                     "role": "user",
-                    "content": str("check whether complete the react loop, if so, call attempt_completion tool with final response")
+                    #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
+                    "content": str("your json has error, analysis and fix error, the JSON object must be formatted: " + str(e))
                 })
-                final_response = response_text
                 continue
 
             # If we've reached the max iterations, generate a final response
