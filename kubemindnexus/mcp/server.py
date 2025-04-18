@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 try:
     from mcp.client.session import ClientSession
     from mcp.client.sse import sse_client
-    from mcp.client.stdio import stdio_client
+    from mcp.client.stdio import stdio_client, StdioServerParameters
     from mcp.types import Implementation, ResourceContent
 except ImportError:
     logging.warning("MCP SDK not found. Fallback to minimal functionality.")
@@ -439,11 +439,17 @@ class StdioMCPServer(MCPServer):
             args = self.args
             
             logging.info(f"Connecting to stdio server {self.name} with command {command}")
-            stdio_params = (command, args, full_env)
+            
+            # Create StdioServerParameters object
+            server_params = StdioServerParameters(
+                command=command,
+                args=args,
+                env=full_env
+            )
             
             # Use AsyncExitStack to manage resources
             stdio_transport = await self._exit_stack.enter_async_context(
-                stdio_client(stdio_params)
+                stdio_client(server_params)
             )
             read, write = stdio_transport
             
