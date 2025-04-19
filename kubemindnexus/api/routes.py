@@ -1,10 +1,13 @@
 """API routes for KubeMindNexus."""
 
 import logging
+import json
 import time
-from typing import Any, Dict, List, Optional, Union
+import asyncio
+from typing import Any, Dict, List, Optional, AsyncGenerator, Union 
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, status, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..config import Configuration
@@ -154,6 +157,7 @@ class ChatMessage(BaseModel):
     
     message: str = Field(..., description="User message")
     cluster_id: Optional[int] = Field(None, description="Cluster ID")
+    stream: bool = Field(False, description="Whether to stream the response")
 
 
 class ChatResponse(BaseModel):
@@ -161,6 +165,14 @@ class ChatResponse(BaseModel):
     
     id: int = Field(..., description="Chat message ID")
     message: str = Field(..., description="Assistant response")
+
+
+class ChatEvent(BaseModel):
+    """Model for streaming chat events."""
+    
+    type: str = Field(..., description="Event type")
+    data: Dict[str, Any] = Field(..., description="Event data")
+    timestamp: float = Field(..., description="Event timestamp")
 
 
 class LLMConfig(BaseModel):
@@ -671,6 +683,10 @@ async def chat(
     config: Configuration = Depends(get_config)
 ):
     """Process a chat message and return the response."""
+    # If streaming is requested, use the streaming endpoint
+    if chat_message.stream:
+        return await chat_stream(chat_message, db_manager, react_loop, config)
+        
     try:
         # Get the current cluster context if specified
         current_cluster = None
@@ -705,6 +721,93 @@ async def chat(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing chat message: {str(e)}",
         )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    chat_message: ChatMessage,
+    db_manager: DatabaseManager = Depends(get_db_manager),
+    react_loop: ReactLoop = Depends(get_react_loop),
+    config: Configuration = Depends(get_config)
+):
+    """Process a chat message and stream the response using Server-Sent Events (SSE)."""
+    
+    async def event_generator():
+        """Generate SSE events from the ReactLoop."""
+        try:
+            # Get the current cluster context if specified
+            current_cluster = None
+            if chat_message.cluster_id is not None:
+                cluster = db_manager.get_cluster(chat_message.cluster_id)
+                if not cluster:
+                    # Send error as an event and return
+                    error_data = json.dumps({
+                        "type": "error",
+                        "data": {
+                            "message": f"Cluster with ID {chat_message.cluster_id} not found"
+                        },
+                        "timestamp": time.time()
+                    })
+                    yield f"data: {error_data}\n\n"
+                    return
+                current_cluster = cluster["name"]
+                
+            # Get chat history
+            chat_history = db_manager.get_chat_history(limit=10, cluster_id=chat_message.cluster_id)
+            conversation_history = [
+                (msg["user_message"], msg["assistant_message"])
+                for msg in reversed(chat_history)  # Reverse to get oldest messages first
+            ]
+            
+            # Stream events from the ReAct loop
+            final_response = None
+            
+            async for event in react_loop.run_stream(
+                user_message=chat_message.message,
+                conversation_history=conversation_history,
+                current_cluster=current_cluster,
+            ):
+                # Convert the event to a JSON string and send as SSE data
+                yield f"data: {json.dumps(event)}\n\n"
+                
+                # Keep track of final response for the chat history
+                if event["type"] == "completion":
+                    final_response = event["data"].get("result", "")
+                elif event["type"] == "response" and event["data"].get("is_final", False):
+                    final_response = event["data"].get("content", "")
+            
+            # Save the chat message to the database if we have a final response
+            if final_response:
+                chat_id = await react_loop._save_chat_message(
+                    user_message=chat_message.message,
+                    assistant_message=final_response,
+                    current_cluster=current_cluster,
+                )
+                
+                # Send the chat ID as a final event
+                yield f"data: {json.dumps({'type': 'chat_id', 'data': {'id': chat_id}, 'timestamp': time.time()})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Error in streaming chat: {str(e)}")
+            error_data = json.dumps({
+                "type": "error",
+                "data": {
+                    "message": f"Error processing chat message: {str(e)}"
+                },
+                "timestamp": time.time()
+            })
+            yield f"data: {error_data}\n\n"
+    
+    # Return a streaming response
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream",
+        },
+    )
 
 
 @router.get("/chat-history", response_model=List[Dict[str, Any]])

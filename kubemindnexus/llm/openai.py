@@ -3,7 +3,8 @@
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+import asyncio
+from typing import Any, Dict, List, Optional, Tuple, Union, AsyncGenerator
 
 import openai
 from openai import OpenAI
@@ -126,6 +127,61 @@ class OpenAILLM(BaseLLM):
         except Exception as e:
             logger.error(f"Error generating response from OpenAI: {str(e)}")
             return f"Error generating response: {str(e)}", []
+    
+    async def generate_stream(
+        self, messages: List[Dict[str, Any]], system_prompt: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """Generate a response from the OpenAI LLM with streaming support.
+        
+        Args:
+            messages: List of messages in the conversation.
+            system_prompt: Optional system prompt to prepend to the conversation.
+            
+        Yields:
+            Chunks of the generated response as they become available.
+        """
+        # Prepare messages for OpenAI format
+        openai_messages = []
+        
+        # Add system prompt if provided
+        if system_prompt:
+            openai_messages.append({
+                "role": "system",
+                "content": system_prompt,
+            })
+        
+        # Add conversation messages
+        openai_messages.extend(messages)
+        
+        # Generate streaming response
+        try:
+            # Build request parameters
+            params = {
+                "model": self.model,
+                "messages": openai_messages,
+                "stream": True,  # Enable streaming
+                **self.parameters,
+            }
+            
+            # Send request with streaming
+            stream = self.client.chat.completions.create(**params)
+            
+            current_content = ""
+            for chunk in stream:
+                if hasattr(chunk.choices[0], 'delta') and hasattr(chunk.choices[0].delta, 'content'):
+                    content_delta = chunk.choices[0].delta.content
+                    if content_delta:
+                        # Yield the new chunk
+                        yield content_delta
+                        current_content += content_delta
+                        
+            # If no content was yielded, yield an empty string to ensure the generator yields at least once
+            if not current_content:
+                yield ""
+                
+        except Exception as e:
+            logger.error(f"Error streaming response from OpenAI: {str(e)}")
+            yield f"Error streaming response: {str(e)}"
     
     async def generate_with_tools(
         self,

@@ -80,6 +80,23 @@ class BaseLLM(abc.ABC):
             that were extracted from the response.
         """
         pass
+    
+    async def generate_stream(
+        self, messages: List[Dict[str, Any]], system_prompt: Optional[str] = None
+    ) -> "AsyncGenerator[str, None]":
+        """Generate a response from the LLM with streaming support.
+        
+        Args:
+            messages: List of messages in the conversation.
+            system_prompt: Optional system prompt to prepend to the conversation.
+            
+        Yields:
+            Chunks of the generated response as they become available.
+        """
+        # Default implementation that falls back to non-streaming
+        # Subclasses should override this with true streaming implementations
+        response, _ = await self.generate(messages, system_prompt)
+        yield response
 
 
 class LLMFactory:

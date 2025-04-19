@@ -266,6 +266,11 @@ class StreamlitApp:
             # Message input area
             user_message = st.text_area("Type your message:", height=100)
             
+            # Streaming mode toggle
+            enable_streaming = st.checkbox("Enable streaming mode", 
+                                          value=True, 
+                                          help="Show real-time response generation and tool calls")
+            
             if current_cluster == "None":
                 st.session_state.current_cluster = None
             else:
@@ -304,7 +309,7 @@ class StreamlitApp:
             # Rerun to update UI first
             st.rerun()
         
-        # Process message if needed (this runs after rerun)
+            # Process message if needed (this runs after rerun)
         if st.session_state.get("process_message", False) and st.session_state.get("pending_message"):
             try:
                 # Get the message
@@ -326,26 +331,220 @@ class StreamlitApp:
                 # Log the API call
                 logger.info(f"Sending chat message to API: '{msg[:30]}...' with cluster_id={cluster_id}")
                 
-                # Send message to API
-                response = AsyncToSync.run(
-                    self.api_client.send_chat_message(
-                        message=msg,
-                        cluster_id=cluster_id,
-                    )
-                )
+                # Check if streaming is enabled
+                enable_streaming = st.session_state.get("enable_streaming", True)
                 
-                if response:
-                    # Add assistant response to chat history
-                    st.session_state.chat_history.append(
-                        {"role": "assistant", "content": response["message"]}
+                if enable_streaming:
+                    # Create a placeholder for the assistant response
+                    assistant_placeholder = st.empty()
+                    # Initialize in session state for accumulating streaming responses
+                    if "current_response" not in st.session_state:
+                        st.session_state.current_response = ""
+                    
+                    # Tool call container for showing tools
+                    tool_container = st.container()
+                    
+                    # Initialize streaming assistant response
+                    assistant_placeholder.markdown(
+                        """
+                        <div class="chat-message bot">
+                            <div style="font-weight: bold;">KubeMindNexus</div>
+                            <div>Thinking...</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
                     )
-                    logger.info(f"Received chat response from API: '{response['message'][:30]}...'")
+                    
+                    # Dictionary to store active tools
+                    tool_calls = {}
+                    
+                    # Process stream
+                    try:
+                        async def process_stream():
+                            try:
+                                with tool_container:
+                                    # Initialize tools expander
+                                    tools_expander = st.expander("Tool Calls", expanded=True)
+                                
+                                async for event in self.api_client.stream_chat_message(
+                                    message=msg,
+                                    cluster_id=cluster_id,
+                                ):
+                                    event_type = event.get("type")
+                                    
+                                    if event_type == "thinking":
+                                        thinking_msg = event["data"].get("message", "Thinking...")
+                                        assistant_placeholder.markdown(
+                                            f"""
+                                            <div class="chat-message bot">
+                                                <div style="font-weight: bold;">KubeMindNexus</div>
+                                                <div>{thinking_msg}</div>
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True,
+                                        )
+                                        
+                                    elif event_type == "response":
+                                        content = event["data"].get("content", "")
+                                        is_partial = event["data"].get("is_partial", True)
+                                        
+                                        # Update the accumulated response
+                                        if is_partial:
+                                            # Append to the current response
+                                            st.session_state.current_response += content
+                                        else:
+                                            # Replace the entire response
+                                            st.session_state.current_response = content
+                                        
+                                        # Update the UI with the current response
+                                        assistant_placeholder.markdown(
+                                            f"""
+                                            <div class="chat-message bot">
+                                                <div style="font-weight: bold;">KubeMindNexus</div>
+                                                <div>{st.session_state.current_response}</div>
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True,
+                                        )
+                                        
+                                    elif event_type == "tool_call":
+                                        tool_name = event["data"].get("tool_name", "unknown_tool")
+                                        params = event["data"].get("parameters", {})
+                                        
+                                        # Add tool call to the dictionary
+                                        tool_calls[tool_name] = {
+                                            "params": params,
+                                            "result": "Executing...",
+                                            "success": None
+                                        }
+                                        
+                                        # Update tools display
+                                        with tools_expander:
+                                            st.markdown(f"### Tool Calls")
+                                            for t_name, t_info in tool_calls.items():
+                                                with st.expander(f"{t_name}", expanded=True):
+                                                    st.markdown("**Parameters:**")
+                                                    st.json(t_info["params"])
+                                                    st.markdown("**Result:**")
+                                                    result_color = "blue" if t_info["success"] is None else ("green" if t_info["success"] else "red")
+                                                    st.markdown(f"<span style='color:{result_color}'>{t_info['result']}</span>", unsafe_allow_html=True)
+                                        
+                                    elif event_type == "tool_result":
+                                        tool_name = event["data"].get("tool_name", "unknown_tool")
+                                        result = event["data"].get("result", "")
+                                        success = event["data"].get("success", False)
+                                        
+                                        # Update tool result
+                                        if tool_name in tool_calls:
+                                            tool_calls[tool_name]["result"] = result
+                                            tool_calls[tool_name]["success"] = success
+                                        else:
+                                            # If tool_name not in tool_calls, add it
+                                            tool_calls[tool_name] = {
+                                                "params": {},
+                                                "result": result,
+                                                "success": success
+                                            }
+                                        
+                                        # Update tools display
+                                        with tools_expander:
+                                            st.markdown(f"### Tool Calls")
+                                            for t_name, t_info in tool_calls.items():
+                                                with st.expander(f"{t_name}", expanded=True):
+                                                    st.markdown("**Parameters:**")
+                                                    st.json(t_info["params"])
+                                                    st.markdown("**Result:**")
+                                                    result_color = "blue" if t_info["success"] is None else ("green" if t_info["success"] else "red")
+                                                    st.markdown(f"<span style='color:{result_color}'>{t_info['result']}</span>", unsafe_allow_html=True)
+                                    
+                                    elif event_type == "completion":
+                                        result = event["data"].get("result", "")
+                                        
+                                        # Final response
+                                        st.session_state.current_response = result
+                                        assistant_placeholder.markdown(
+                                            f"""
+                                            <div class="chat-message bot">
+                                                <div style="font-weight: bold;">KubeMindNexus</div>
+                                                <div>{result}</div>
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True,
+                                        )
+                                        
+                                    elif event_type == "error":
+                                        error_msg = event["data"].get("message", "An error occurred")
+                                        assistant_placeholder.markdown(
+                                            f"""
+                                            <div class="chat-message bot">
+                                                <div style="font-weight: bold;">KubeMindNexus</div>
+                                                <div>Error: {error_msg}</div>
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True,
+                                        )
+                            
+                            except Exception as e:
+                                logger.error(f"Error processing stream: {str(e)}")
+                                assistant_placeholder.markdown(
+                                    f"""
+                                    <div class="chat-message bot">
+                                        <div style="font-weight: bold;">KubeMindNexus</div>
+                                        <div>Error processing your request: {str(e)}</div>
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True,
+                                )
+                        
+                        # Run the streaming process
+                        AsyncToSync.run(process_stream())
+                        
+                        # Add the final response to chat history
+                        if "current_response" in st.session_state and st.session_state.current_response:
+                            st.session_state.chat_history.append(
+                                {"role": "assistant", "content": st.session_state.current_response}
+                            )
+                            # Clear the current response for next message
+                            st.session_state.current_response = ""
+                        
+                    except Exception as e:
+                        logger.error(f"Error in streaming: {str(e)}")
+                        assistant_placeholder.markdown(
+                            f"""
+                            <div class="chat-message bot">
+                                <div style="font-weight: bold;">KubeMindNexus</div>
+                                <div>Error: {str(e)}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        # Add error to chat history
+                        st.session_state.chat_history.append(
+                            {"role": "assistant", "content": f"Error: {str(e)}"}
+                        )
+                    
                 else:
-                    # Add error message to chat history
-                    st.session_state.chat_history.append(
-                        {"role": "assistant", "content": "Failed to process your message. Please try again."}
+                    # Use non-streaming API for backward compatibility
+                    response = AsyncToSync.run(
+                        self.api_client.send_chat_message(
+                            message=msg,
+                            cluster_id=cluster_id,
+                            stream=False
+                        )
                     )
-                    logger.error("Received empty response from chat API")
+                    
+                    if response:
+                        # Add assistant response to chat history
+                        st.session_state.chat_history.append(
+                            {"role": "assistant", "content": response["message"]}
+                        )
+                        logger.info(f"Received chat response from API: '{response['message'][:30]}...'")
+                    else:
+                        # Add error message to chat history
+                        st.session_state.chat_history.append(
+                            {"role": "assistant", "content": "Failed to process your message. Please try again."}
+                        )
+                        logger.error("Received empty response from chat API")
                     
             except Exception as e:
                 # Add error message to chat history
