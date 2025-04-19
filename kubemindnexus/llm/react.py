@@ -348,8 +348,7 @@ class ReactLoop:
                 
                 tool_messages.append({
                     "role": "user",
-                    #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
-                    "content": str("your json has error, analysis and fix error, the JSON object must be formatted: " + str(e))
+                    "content": str("check whether complete the react loop, if so, call attempt_completion tool with final response")
                 })
                 continue
 
