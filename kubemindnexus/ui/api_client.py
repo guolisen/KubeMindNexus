@@ -2,9 +2,12 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+import asyncio
+import time
+from typing import Any, Dict, List, Optional, Union, AsyncGenerator, Callable
 
 import httpx
+from httpx import AsyncClient
 
 logger = logging.getLogger(__name__)
 
@@ -402,20 +405,26 @@ class ApiClient:
         self,
         message: str,
         cluster_id: Optional[int] = None,
+        stream: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """Send a chat message and get the response.
         
         Args:
             message: Chat message.
             cluster_id: Optional cluster ID for context.
+            stream: Whether to stream the response. If True, use stream_chat_message instead.
             
         Returns:
             Response message or None if failed.
         """
+        if stream:
+            logger.warning("stream=True passed to send_chat_message, but this method doesn't support streaming. Use stream_chat_message instead.")
+            
         try:
             data = {
                 "message": message,
                 "cluster_id": cluster_id,
+                "stream": False,  # Ensure we're not streaming for this method
             }
             response = await self.client.post("/api/chat", json=data)
             response.raise_for_status()
@@ -423,6 +432,113 @@ class ApiClient:
         except Exception as e:
             logger.error(f"Failed to send chat message: {str(e)}")
             return None
+            
+    async def stream_chat_message(
+        self,
+        message: str, 
+        cluster_id: Optional[int] = None,
+        on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_thinking: Optional[Callable[[str], None]] = None,
+        on_tool_call: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        on_tool_result: Optional[Callable[[str, Dict[str, Any], bool], None]] = None,
+        on_response: Optional[Callable[[str, bool], None]] = None,
+        on_completion: Optional[Callable[[str], None]] = None,
+        on_error: Optional[Callable[[str], None]] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Send a chat message and stream the response using Server-Sent Events.
+        
+        This method yields each event as it is received from the server.
+        It also calls the appropriate callback for each event type if provided.
+        
+        Args:
+            message: Chat message.
+            cluster_id: Optional cluster ID for context.
+            on_event: Optional callback for any event.
+            on_thinking: Optional callback for thinking events.
+            on_tool_call: Optional callback for tool call events.
+            on_tool_result: Optional callback for tool result events.
+            on_response: Optional callback for response events.
+            on_completion: Optional callback for completion events.
+            on_error: Optional callback for error events.
+            
+        Yields:
+            Each event from the server as a dictionary.
+        """
+        data = {
+            "message": message,
+            "cluster_id": cluster_id,
+            "stream": True,
+        }
+        
+        try:
+            # Manually handle the streaming request using SSE
+            async with self.client.stream("POST", "/api/chat/stream", json=data, timeout=None) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    # Skip empty lines and heartbeat messages
+                    if not line or line.startswith(":"):
+                        continue
+                        
+                    # Parse the SSE data
+                    if line.startswith("data: "):
+                        try:
+                            event_data = json.loads(line[6:])  # Remove "data: " prefix
+                            
+                            # Call the general event callback
+                            if on_event:
+                                on_event(event_data)
+                                
+                            # Call specific event type callbacks
+                            event_type = event_data.get("type")
+                            if event_type == "thinking" and on_thinking:
+                                on_thinking(event_data["data"].get("message", "Thinking..."))
+                                
+                            elif event_type == "tool_call" and on_tool_call:
+                                tool_name = event_data["data"].get("tool_name", "unknown_tool")
+                                params = event_data["data"].get("parameters", {})
+                                on_tool_call(tool_name, params)
+                                
+                            elif event_type == "tool_result" and on_tool_result:
+                                tool_name = event_data["data"].get("tool_name", "unknown_tool")
+                                result = event_data["data"].get("result", "")
+                                success = event_data["data"].get("success", False)
+                                on_tool_result(tool_name, result, success)
+                                
+                            elif event_type == "response" and on_response:
+                                content = event_data["data"].get("content", "")
+                                is_partial = event_data["data"].get("is_partial", True)
+                                on_response(content, is_partial)
+                                
+                            elif event_type == "completion" and on_completion:
+                                result = event_data["data"].get("result", "")
+                                on_completion(result)
+                                
+                            elif event_type == "error" and on_error:
+                                message = event_data["data"].get("message", "Unknown error")
+                                on_error(message)
+                                
+                            # Yield the event to the caller
+                            yield event_data
+                            
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse SSE event: {e}")
+                            if on_error:
+                                on_error(f"Failed to parse event: {str(e)}")
+                            
+        except Exception as e:
+            logger.error(f"Error streaming chat message: {str(e)}")
+            if on_error:
+                on_error(f"Connection error: {str(e)}")
+            
+            # Yield error event
+            error_event = {
+                "type": "error",
+                "data": {
+                    "message": f"Error streaming chat message: {str(e)}"
+                },
+                "timestamp": time.time()
+            }
+            yield error_event
     
     async def get_chat_history(
         self,
