@@ -196,8 +196,6 @@ class ReactLoop:
             )
 
             logger.info(f"LLM Response: {response_text}")
-            
-            logger.info("Receive LLM response: {}".format(response_text))
 
             # Translate tool format if needed
 
@@ -330,9 +328,14 @@ class ReactLoop:
                 logger.info(f"Response is not a JSON tool call: {str(e)}")
 
                 tool_messages.append({
-                    "role": "user",
+                    "role": "assistant",
                     #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
                     "content": str(response_text)
+                })
+                tool_messages.append({
+                    "role": "user",
+                    #"content": str("thinking and try to answer the previous user query according to following information: " + tool_result + "\n")
+                    "content": "if current information is enough to answer the previous user query, please call attempt_completion tool to stop the task. Otherwise, please continue to think and call tool again."
                 })
                 continue
 
