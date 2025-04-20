@@ -154,6 +154,7 @@ class OpenAILLM(BaseLLM):
         openai_messages.extend(messages)
         
         # Generate streaming response
+        stream = None
         try:
             # Build request parameters
             params = {
@@ -167,14 +168,21 @@ class OpenAILLM(BaseLLM):
             stream = self.client.chat.completions.create(**params)
             
             current_content = ""
+            # Use a try-except inside the loop to handle socket errors for individual chunks
             for chunk in stream:
-                if hasattr(chunk.choices[0], 'delta') and hasattr(chunk.choices[0].delta, 'content'):
-                    content_delta = chunk.choices[0].delta.content
-                    if content_delta:
-                        # Yield the new chunk
-                        yield content_delta
-                        current_content += content_delta
-                        
+                try:
+                    if hasattr(chunk.choices[0], 'delta') and hasattr(chunk.choices[0].delta, 'content'):
+                        content_delta = chunk.choices[0].delta.content
+                        if content_delta:
+                            # Yield the new chunk
+                            yield content_delta
+                            current_content += content_delta
+                except (BrokenPipeError, ConnectionError, OSError) as socket_err:
+                    # Log the socket error but don't crash the entire stream
+                    logger.warning(f"Socket error while streaming chunk: {str(socket_err)}")
+                    # Try to continue with the next chunk
+                    continue
+                    
             # If no content was yielded, yield an empty string to ensure the generator yields at least once
             if not current_content:
                 yield ""
@@ -182,6 +190,14 @@ class OpenAILLM(BaseLLM):
         except Exception as e:
             logger.error(f"Error streaming response from OpenAI: {str(e)}")
             yield f"Error streaming response: {str(e)}"
+        finally:
+            # Ensure resources are properly cleaned up
+            if stream and hasattr(stream, 'close'):
+                try:
+                    stream.close()
+                except Exception as close_err:
+                    # Just log cleanup errors
+                    logger.warning(f"Error closing stream: {str(close_err)}")
     
     async def generate_with_tools(
         self,

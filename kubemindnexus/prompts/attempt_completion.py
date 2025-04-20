@@ -13,7 +13,7 @@ ATTEMPT_COMPLETION_TOOL_DEFINITION = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "result": {
+            "final_response": {
                 "type": "string",
                 "description": "A comprehensive final response that summarizes what was accomplished."
             },
@@ -22,7 +22,7 @@ ATTEMPT_COMPLETION_TOOL_DEFINITION = {
                 "description": "Optional CLI command to demonstrate the result."
             }
         },
-        "required": ["result"]
+        "required": ["final_response"]
     }
 }
 

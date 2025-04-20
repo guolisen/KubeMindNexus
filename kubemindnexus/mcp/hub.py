@@ -159,7 +159,13 @@ class MCPHub:
             if server.name in self.manager.connected_servers and server.tools:
                 # Convert Tool objects to dictionaries
                 result[server.name] = [
-                    {"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema}
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": tool.input_schema,
+                        "server": server.name,
+                        "cluster": cluster_name
+                    }
                     for tool in server.tools
                 ]
         
@@ -180,7 +186,13 @@ class MCPHub:
             if server.name in self.manager.connected_servers and server.tools:
                 # Convert Tool objects to dictionaries
                 result[server.name] = [
-                    {"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema}
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": tool.input_schema,
+                        "server": server.name,
+                        "cluster": "local"
+                    }
                     for tool in server.tools
                 ]
         

@@ -12,8 +12,6 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [
-                "--config",
-                "/root/code/KubeMindNexus/kubemindnexus/config/default_config.json",
                 "--mode",
                 "api"
             ]

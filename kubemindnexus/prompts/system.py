@@ -4,15 +4,17 @@ This module provides enhanced system prompt templates with modular components
 for different aspects of the system, including tool usage, MCP integration,
 React loop guidance, and more.
 """
-
+import json
 from typing import Dict, List, Optional, Any
 from .attempt_completion import get_attempt_completion_tool
 
 
 def get_introduction() -> str:
     """Get the introduction section of the system prompt."""
-    return """You are KubeMindNexus, an AI assistant specialized in Kubernetes cluster management and cloud infrastructure operations. You have deep knowledge of container orchestration, deployment strategies, networking, and cloud environments.
-
+    return """You are KubeMindNexus, an AI assistant specialized in Kubernetes cluster management and cloud infrastructure operations.
+You have deep knowledge of container orchestration, deployment strategies, networking, and cloud environments. You can call mcp tools to sovle the user's request.
+You are capable of reasoning, acting, and observing the results of your actions. You can also plan your next steps based on the results you observe.
+if no need to call tools, summerize all of message and give the final response according to user's query.
 ===="""
 
 
@@ -24,6 +26,7 @@ REASONING AND ACTING (ReAct) PROCESS
 When working on tasks, follow this reasoning and acting process:
 
 0. TASK COMPLETION: Signal when the task is complete
+   - If no need to call tools, summarize all of the message and call the attempt_completion tool, give the final response according to user's query
    - **If you have completed all steps in the ReAct process, call the attempt_completion tool**
    - Use the attempt_completion tool ONLY after confirming all previous tool uses were successful
    - Before using attempt_completion, verify that you've received user confirmation for all previous actions
@@ -147,14 +150,7 @@ When responding to users:
 4. Explain the reasoning behind your recommendations
 5. Highlight potential issues or considerations for production environments
 6. If there are multiple approaches, briefly explain the tradeoffs
-
-<< MUST IMPORTANT NOTICE >>:
-When calling MCP tools, you MUST strictly follow these rules:
-    - Return ONLY a valid JSON object formatted as a tool call request
-    - Absolutely NO explanations, comments, or extra text
-    - Do NOT include any reasoning or thought process
-
-Format longer YAML examples or command outputs in code blocks for readability.
+7. Avoid unnecessary jargon or overly technical language unless required
 """
 
 def get_tool_usage_guidance() -> str:
@@ -164,7 +160,7 @@ def get_tool_usage_guidance() -> str:
 ==========
 
 Choose the appropriate tool based on the user's question. 
-    - If no tool is needed, reply directly.
+    - If no need to call tools, summarize all of the message and call the 'attempt_completion' tool, give the final response according to user's query
     - If cannot find the parameters from current context, ask user for more information. 
 IMPORTANT: When you need to use a tool, you must ONLY respond with
 the exact JSON object format below, nothing else.
@@ -172,7 +168,7 @@ the exact JSON object format below, nothing else.
 {
   "tool": "tool_name",      // Must be the exact tool name from the description
   "parameters": {
-    "param1": "value1",
+    "param1": "value1",     // Must be the exact parameter name from the description
     "param2": "value2",
     "param3": "",
   }
@@ -185,7 +181,7 @@ This ensures the API server can correctly route your request to the appropriate 
 *<<TOOL USAGE GUIDELINES>>*\n
 *<< MUST IMPORTANT NOTICE >>*:\n
 When calling MCP tools, you MUST strictly follow these rules:\n
-    - Each LLM response must be only run one tool at a time
+    - if LLM need to call tools, each LLM response must be only run one tool at a time
     - DO NOT set the tool name outside the JSON object. 
     - !! Return ONLY a valid JSON object formatted as a tool call request !!\n
     - !! Absolutely NO explanations, comments, or extra text !!\n
@@ -200,12 +196,12 @@ When you receive a tool's response, follow these steps:\n
 3. Focus on the most relevant information\n
 4. Use appropriate context from the user's question\n
 5. Avoid simply repeating the raw data\n
-6. If no need to call tools, summerize all of message and give the final response according to user's query\n\n
+6. If no need to call tools, summarize all of the message and call the 'attempt_completion' tool, give the final response according to user's query\n
 
 *<<TOOL USAGE GUIDELINES>>*\n
 *<< MUST IMPORTANT NOTICE >>*:\n
 When calling MCP tools, you MUST strictly follow these rules:\n
-    - Return ONLY a valid JSON object formatted as a tool call request\n
+    - Return ONLY a valid JSON object as a tool call request\n
     - Absolutely NO explanations, comments, or extra text\n
     - Do NOT include any reasoning or thought process\n
     - Do NOT respond with any other text, just the JSON object\n
@@ -234,40 +230,63 @@ def generate_system_prompt(
     
     # Add cluster context if provided
     #if cluster_context:
-    # prompt_parts.append(f"CURRENT CLUSTER CONTEXT\n\n{cluster_context}")
+    prompt_parts.append(f"CURRENT CLUSTER CONTEXT\n\n{cluster_context}")
     
     # Add optional sections
-    if include_react_guidance:
-        prompt_parts.append(get_react_loop_guidance())
+    #if include_react_guidance:
+    #    prompt_parts.append(get_react_loop_guidance())
     
     #if include_mcp_guidance:
     #    prompt_parts.append(get_mcp_integration_guidance())
     
     # Add Kubernetes guidance and response guidelines
     #prompt_parts.append(get_kubernetes_guidance())
-    #prompt_parts.append(get_response_guidelines())
-    prompt_parts.append("\n=============\n")
-    prompt_parts.append(get_tool_usage_guidance())
+    
 
     prompt_parts.append("\n=============\n")
     # Add attempt_completion tool to available tools
     attempt_completion_tool = get_attempt_completion_tool()
     available_tools_with_completion = ""
     available_tools_with_completion += "\n\n\n"
-    available_tools_with_completion += f"\nTool: {attempt_completion_tool['name']}\n"
-    available_tools_with_completion += f"Description: {attempt_completion_tool['description']}\n"
+
+    attempt_completion_tool_json = {
+        "name": attempt_completion_tool['name'],
+        "description": attempt_completion_tool['description'],
+        "server": "local",
+        "parameters": {}
+    }
     
-    # Add arguments description for attempt_completion
-    available_tools_with_completion += "Arguments:\n"
+    # Add parameters information
+    input_schema = attempt_completion_tool.get("inputSchema", {})
+    required = input_schema.get("required", [])
+    
     for param_name, param_info in attempt_completion_tool['inputSchema']['properties'].items():
-        req_marker = " (required)" if param_name in attempt_completion_tool['inputSchema']['required'] else ""
-        available_tools_with_completion += f"- {param_name}: {param_info['description']}{req_marker}\n"
+        is_required = param_name in required
+        attempt_completion_tool_json["parameters"][param_name] = {
+            "type": param_info.get("type", "string"),
+            "description": param_info.get("description", "No description"),
+            "required": is_required
+        }
+    available_tools_with_completion += str("### Attempt Completion Tool\n")
+    available_tools_with_completion += str(f"\n### Tool: {attempt_completion_tool['name']}\n")
+    available_tools_with_completion += str(json.dumps(attempt_completion_tool_json, indent=2))
+    available_tools_with_completion += "\n\n\n"
     
+    # Add available tools
     available_tools_with_completion = available_tools
 
     # Add tool usage guidance
     prompt_parts.append("AVAILABLE TOOLS:\n" + available_tools_with_completion)
 
+    prompt_parts.append("\n=============\n")
+    prompt_parts.append(get_tool_usage_guidance())
+    prompt_parts.append("\n=============\n")
+    prompt_parts.append(get_response_guidelines())
+    prompt_parts.append("\n=============\n")
+    #prompt_parts.append(get_kubernetes_guidance())
+    prompt_parts.append("\n=============\n")
+    prompt_parts.append(get_mcp_integration_guidance())
+    prompt_parts.append("\n=============\n")
 
     # Combine all sections
     return "\n\n".join(prompt_parts)
@@ -352,8 +371,8 @@ def generate_tool_format(
 ) -> str:
     """Generate a formatted description of tools grouped by server.
     
-    This function produces a more detailed format that clearly distinguishes
-    between cluster-specific tools and local tools, with improved organization.
+    This function produces a JSON format for each tool that clearly shows
+    the LLM how to structure tool calls.
     
     Args:
         tools_by_cluster: Dictionary mapping cluster server names to lists of tools.
@@ -361,159 +380,157 @@ def generate_tool_format(
         cluster_context: Optional name of the active cluster for highlighting.
         
     Returns:
-        Formatted string describing available tools.
+        Formatted string describing available tools with JSON representations.
     """
     if not tools_by_cluster and not tools_by_local:
         return "No tools available."
 
-    # Organize servers into cluster-specific and local categories
-    cluster_servers = {}
-    local_servers = {}
-    other_servers = {}
-    
-    for server_name, tools in tools_by_cluster.items():
-        cluster_servers[server_name] = tools
-    for server_name, tools in tools_by_local.items():
-        local_servers[server_name] = tools
-
+    import json
     sections = []
     
+    # Add usage instructions
+    sections.append("""TOOL USAGE FORMAT:
+When calling a tool, respond ONLY with a JSON object in this format:
+
+{
+  "server": "server_name",
+  "tool": "tool_name",
+  "parameters": {
+    "param1": "value1",
+    "param2": "value2"
+  }
+}
+
+IMPORTANT: Return ONLY the JSON object, with NO additional text or explanations.""")
+    
     # Add active cluster section if applicable
-    if cluster_context and cluster_servers:
-        sections.append(f"## ACTIVE CLUSTER: {cluster_context}")
-        for server_name, tools in cluster_servers.items():
-            #section_title = f"Server: {server_name}"
-            section_title = f""
-            tool_descriptions = []
+    if cluster_context and tools_by_cluster:
+        sections.append(f"\n## ACTIVE CLUSTER: {cluster_context}")
+        for server_name, tools in tools_by_cluster.items():
+            section_tools = []
             
             for tool in tools:
-                name = tool.get("name", "unknown")
-                description = tool.get("description", "No description available")
+                # Create a JSON representation of the tool
+                tool_json = {
+                    "name": tool.get("name", "unknown"),
+                    "description": tool.get("description", "No description available"),
+                    "server": server_name,
+                    "parameters": {}
+                }
                 
-                # Format input schema information if available
-                input_params = []
+                # Add parameters information
                 input_schema = tool.get("inputSchema", {})
                 properties = input_schema.get("properties", {})
                 required = input_schema.get("required", [])
                 
                 for param_name, param_info in properties.items():
-                    param_desc = param_info.get("description", "No description")
-                    param_type = param_info.get("type", "any")
                     is_required = param_name in required
-                    req_marker = " (required)" if is_required else ""
+                    tool_json["parameters"][param_name] = {
+                        "type": param_info.get("type", "string"),
+                        "description": param_info.get("description", "No description"),
+                        "required": is_required
+                    }
+                
+                # Create example call JSON
+                example_params = {}
+                for param_name, param_info in properties.items():
+                    param_type = param_info.get("type", "string")
                     
-                    input_params.append(f"- {param_name}: {param_desc}{req_marker}")
+                    # Generate appropriate example value based on type
+                    if param_type == "string":
+                        if "enum" in param_info and param_info["enum"]:
+                            example_params[param_name] = param_info["enum"][0]
+                        else:
+                            example_params[param_name] = f"example_{param_name}"
+                    elif param_type == "integer" or param_type == "number":
+                        example_params[param_name] = 42
+                    elif param_type == "boolean":
+                        example_params[param_name] = True
+                    elif param_type == "array":
+                        example_params[param_name] = ["item1", "item2"]
+                    elif param_type == "object":
+                        example_params[param_name] = {"key": "value"}
+                    else:
+                        example_params[param_name] = "example_value"
                 
-                # Format tool description
-                tool_desc = [f"\nTool: {name}"]
-                tool_desc.append(f"{section_title}")
-                tool_desc.append(f"Description: {description}")
+                example_call = {
+                    "server": server_name,
+                    "tool": tool.get("name", "unknown"),
+                    "parameters": example_params
+                }
                 
-                if input_params:
-                    tool_desc.append("Arguments:")
-                    tool_desc.extend(input_params)
+                #tool_json["example_call"] = example_call
                 
-                # Add JSON example
-                #example_json = _create_example_json(server_name, name, properties, required)
-                #tool_desc.append("\nExample Usage:")
-                #tool_desc.append(example_json)
-                
-                tool_descriptions.append("\n".join(tool_desc))
+                # Add formatted JSON string to sections
+                section_tools.append(f"\n### Tool: {tool.get('name', 'unknown')}")
+                section_tools.append(json.dumps(tool_json, indent=2))
             
-            # Add server section
-            if tool_descriptions:
-                sections.append(f"{section_title}\n\n" + "\n\n".join(tool_descriptions))
+            if section_tools:
+                sections.append("\n".join(section_tools))
     
-    # Add local servers section
-    if local_servers:
+    # Add local tools section
+    if tools_by_local:
         sections.append(f"\n## LOCAL TOOLS")
-        for server_name, tools in local_servers.items():
-            #section_title = f"Server: {server_name}"
-            section_title = f""
-            tool_descriptions = []
+        for server_name, tools in tools_by_local.items():
+            section_tools = []
             
             for tool in tools:
-                name = tool.get("name", "unknown")
-                description = tool.get("description", "No description available")
+                # Create a JSON representation of the tool
+                tool_json = {
+                    "name": tool.get("name", "unknown"),
+                    "description": tool.get("description", "No description available"),
+                    "server": server_name,
+                    "parameters": {}
+                }
                 
-                # Format input schema information if available
-                input_params = []
+                # Add parameters information
                 input_schema = tool.get("inputSchema", {})
                 properties = input_schema.get("properties", {})
                 required = input_schema.get("required", [])
                 
                 for param_name, param_info in properties.items():
-                    param_desc = param_info.get("description", "No description")
-                    param_type = param_info.get("type", "any")
                     is_required = param_name in required
-                    req_marker = " (required)" if is_required else ""
-                    
-                    input_params.append(f"- {param_name}: {param_desc}{req_marker}")
+                    tool_json["parameters"][param_name] = {
+                        "type": param_info.get("type", "string"),
+                        "description": param_info.get("description", "No description"),
+                        "required": is_required
+                    }
                 
-                # Format tool description
-                tool_desc = [f"\nTool: {name}"]
-                tool_desc.append(f"{section_title}")
-                tool_desc.append(f"Description: {description}")
-                
-                if input_params:
-                    tool_desc.append("Arguments:")
-                    tool_desc.extend(input_params)
-                
-                # Add JSON example
-                example_json = _create_example_json(server_name, name, properties, required)
-                tool_desc.append("\nExample Usage:")
-                tool_desc.append(example_json)
-                
-                tool_descriptions.append("\n".join(tool_desc))
-            
-            # Add server section
-            if tool_descriptions:
-                sections.append(f"{section_title}\n\n" + "\n\n".join(tool_descriptions))
-    
-    # Add other servers section (if any)
-    if other_servers:
-        sections.append(f"\n## OTHER TOOLS")
-        for server_name, tools in other_servers.items():
-            #section_title = f"Server: {server_name}"
-            section_title = f""
-            tool_descriptions = []
-            
-            for tool in tools:
-                name = tool.get("name", "unknown")
-                description = tool.get("description", "No description available")
-                
-                # Format input schema information if available
-                input_params = []
-                input_schema = tool.get("inputSchema", {})
-                properties = input_schema.get("properties", {})
-                required = input_schema.get("required", [])
-                
+                # Create example call JSON
+                example_params = {}
                 for param_name, param_info in properties.items():
-                    param_desc = param_info.get("description", "No description")
-                    param_type = param_info.get("type", "any")
-                    is_required = param_name in required
-                    req_marker = " (required)" if is_required else ""
+                    param_type = param_info.get("type", "string")
                     
-                    input_params.append(f"- {param_name}: {param_desc}{req_marker}")
+                    # Generate appropriate example value based on type
+                    if param_type == "string":
+                        if "enum" in param_info and param_info["enum"]:
+                            example_params[param_name] = param_info["enum"][0]
+                        else:
+                            example_params[param_name] = f"example_{param_name}"
+                    elif param_type == "integer" or param_type == "number":
+                        example_params[param_name] = 42
+                    elif param_type == "boolean":
+                        example_params[param_name] = True
+                    elif param_type == "array":
+                        example_params[param_name] = ["item1", "item2"]
+                    elif param_type == "object":
+                        example_params[param_name] = {"key": "value"}
+                    else:
+                        example_params[param_name] = "example_value"
                 
-                # Format tool description
-                tool_desc = [f"\nTool: {name}"]
-                tool_desc.append(f"{section_title}")
-                tool_desc.append(f"Description: {description}")
+                example_call = {
+                    "server": server_name,
+                    "tool": tool.get("name", "unknown"),
+                    "parameters": example_params
+                }
                 
-                if input_params:
-                    tool_desc.append("Arguments:")
-                    tool_desc.extend(input_params)
+                #tool_json["example_call"] = example_call
                 
-                # Add JSON example
-                example_json = _create_example_json(server_name, name, properties, required)
-                tool_desc.append("\nExample Usage:")
-                tool_desc.append(example_json)
-                
-                tool_descriptions.append("\n".join(tool_desc))
+                # Add formatted JSON string to sections
+                section_tools.append(f"\n### Tool: {tool.get('name', 'unknown')}")
+                section_tools.append(json.dumps(tool_json, indent=2))
             
-            # Add server section
-            if tool_descriptions:
-                sections.append(f"{section_title}\n\n" + "\n\n".join(tool_descriptions))
+            if section_tools:
+                sections.append("\n".join(section_tools))
     
     return "\n\n".join(sections)

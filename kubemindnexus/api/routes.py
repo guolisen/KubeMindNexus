@@ -764,7 +764,7 @@ async def chat_stream(
             
             async for event in react_loop.run_stream(
                 user_message=chat_message.message,
-                conversation_history=conversation_history,
+                conversation_history=None,
                 current_cluster=current_cluster,
             ):
                 # Convert the event to a JSON string and send as SSE data

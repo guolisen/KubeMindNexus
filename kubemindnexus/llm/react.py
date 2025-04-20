@@ -640,7 +640,7 @@ class ReactLoop:
                         
                         # Get the completion result
                         self.task_completed = True
-                        self.completion_result = tool_args.get("result", "Task completed successfully.")
+                        self.completion_result = tool_args.get("final_response", "Task completed successfully.")
                         
                         # Set the final response from the completion result
                         final_response = self.completion_result
